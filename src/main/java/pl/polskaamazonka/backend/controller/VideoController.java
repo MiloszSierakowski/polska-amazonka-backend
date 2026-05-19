@@ -28,4 +28,9 @@ public class VideoController {
     public VideoDTO create(@RequestBody VideoDTO dto) {
         return videoService.create(dto);
     }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        videoService.delete(id);
+    }
 }

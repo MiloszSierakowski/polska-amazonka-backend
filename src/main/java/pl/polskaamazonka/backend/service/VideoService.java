@@ -15,18 +15,32 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
+import pl.polskaamazonka.backend.model.Link;
+import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
+import pl.polskaamazonka.backend.model.VideoProduct;
+import pl.polskaamazonka.backend.repository.LinkRepository;
+import pl.polskaamazonka.backend.repository.ProductRepository;
+import pl.polskaamazonka.backend.repository.VideoCategoryRepository;
+import pl.polskaamazonka.backend.repository.VideoProductRepository;
 import pl.polskaamazonka.backend.repository.VideoRepository;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class VideoService {
 
     private final VideoRepository videoRepository;
+    private final ProductRepository productRepository;
+    private final VideoProductRepository videoProductRepository;
+    private final VideoCategoryRepository videoCategoryRepository;
+    private final LinkRepository linkRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
@@ -61,6 +75,46 @@ public class VideoService {
         video.setCreatedAt(Instant.now());
         Video saved = videoRepository.save(video);
         return VideoMapper.toDTO(saved);
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        Video video = videoRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        List<VideoProduct> relations = new ArrayList<>(videoProductRepository.findByVideo_Id(id));
+        Set<Long> linkIdsToCheck = new HashSet<>();
+
+        for (VideoProduct relation : relations) {
+            Product product = relation.getProduct();
+            if (product == null || product.getId() == null) {
+                videoProductRepository.delete(relation);
+                continue;
+            }
+            Long productId = product.getId().longValue();
+            long usageCount = videoProductRepository.countByProduct_Id(productId);
+
+            if (usageCount <= 1L) {
+                Link link = product.getProductLink();
+                if (link != null && link.getId() != null && "product".equals(link.getType())) {
+                    linkIdsToCheck.add(link.getId().longValue());
+                }
+                videoProductRepository.delete(relation);
+                productRepository.delete(product);
+            } else {
+                videoProductRepository.delete(relation);
+            }
+        }
+
+        videoCategoryRepository.deleteByVideo_Id(id);
+        videoRepository.delete(video);
+        videoRepository.flush();
+
+        linkIdsToCheck.stream()
+                .filter(linkId -> productRepository.countByProductLink_Id(linkId) == 0L)
+                .forEach(linkId -> linkRepository.findById(linkId.intValue())
+                        .filter(link -> "product".equals(link.getType()))
+                        .ifPresent(linkRepository::delete));
     }
 
     private String fetchThumbnailUrlFromTikTokOembed(String tiktokUrl) {
