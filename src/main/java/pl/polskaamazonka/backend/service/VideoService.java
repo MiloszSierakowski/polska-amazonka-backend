@@ -45,7 +45,7 @@ public class VideoService {
     private final LinkRepository linkRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-    private final ProductImageScraperService productImageScraperService;
+    private final ProductPageScraperService productPageScraperService;
 
     @Transactional(readOnly = true)
     public List<VideoDTO> getAll(Long categoryId) {
@@ -168,7 +168,7 @@ public class VideoService {
     }
 
     private void attachProduct(Video video, ProductDTO dto) {
-        if (dto == null || dto.getName() == null || dto.getName().isBlank()) {
+        if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         String shopUrl = resolveShopUrl(dto);
@@ -183,13 +183,21 @@ public class VideoService {
         link.setLastCheckedAt(Instant.now());
         link = linkRepository.save(link);
 
+        ProductPageScraperService.ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        String productName;
+        if (dto.getName() != null && !dto.getName().isBlank()) {
+            productName = productPageScraperService.resolveProductName(shopUrl, dto.getName());
+        } else {
+            productName = scraped.getName();
+        }
+
         String imageUrl = dto.getImageUrl();
         if (imageUrl == null || imageUrl.isBlank()) {
-            imageUrl = productImageScraperService.scrapeImageUrl(shopUrl);
+            imageUrl = scraped.getImageUrl();
         }
 
         Product product = new Product();
-        product.setName(dto.getName());
+        product.setName(productName);
         product.setImageUrl(imageUrl);
         product.setProductLink(link);
         product = productRepository.save(product);
