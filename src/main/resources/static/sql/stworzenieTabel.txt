@@ -1,0 +1,114 @@
+-- ============================
+--  Tabela: users
+-- ============================
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    login VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    CONSTRAINT users_role_chk CHECK (role IN ('ADMIN', 'WORKER'))
+);
+
+-- ============================
+--  Tabela: Category
+-- ============================
+CREATE TABLE Category (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    image_url VARCHAR(500)
+);
+
+-- ============================
+--  Tabela: Video
+-- ============================
+CREATE TABLE Video (
+    id SERIAL PRIMARY KEY,
+    tiktok_url VARCHAR(500),
+    local_mp4_url VARCHAR(500),
+    preview_image_url VARCHAR(500),
+    title VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    last_checked_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================
+--  Video ↔ Category (N:M)
+-- ============================
+CREATE TABLE VideoCategory (
+    id SERIAL PRIMARY KEY,
+    video_id INT NOT NULL,
+    category_id INT NOT NULL,
+    FOREIGN KEY (video_id) REFERENCES Video(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES Category(id) ON DELETE CASCADE,
+    UNIQUE (video_id, category_id)
+);
+
+-- ============================
+--  Tabela: Link
+-- ============================
+CREATE TABLE Link (
+    id SERIAL PRIMARY KEY,
+    url VARCHAR(500) NOT NULL,
+    type VARCHAR(50) NOT NULL, -- product / social / partner / footer / other
+    is_active BOOLEAN DEFAULT TRUE,
+    last_checked_at TIMESTAMP
+);
+
+-- ============================
+--  Tabela: Product
+-- ============================
+CREATE TABLE Product (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    image_url VARCHAR(500),
+    product_link_id INT NOT NULL,
+    FOREIGN KEY (product_link_id) REFERENCES Link(id) ON DELETE CASCADE
+);
+
+-- ============================
+--  Video ↔ Product (N:M)
+-- ============================
+CREATE TABLE VideoProduct (
+    id SERIAL PRIMARY KEY,
+    video_id INT NOT NULL,
+    product_id INT NOT NULL,
+    FOREIGN KEY (video_id) REFERENCES Video(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES Product(id) ON DELETE CASCADE,
+    UNIQUE (video_id, product_id)
+);
+
+-- ============================
+--  Tabela: AffiliateCode
+--  (AFILIACYJNE + ZNIŻKOWE)
+-- ============================
+CREATE TABLE AffiliateCode (
+    id SERIAL PRIMARY KEY,
+    platform VARCHAR(50) NOT NULL,       -- ALIEXPRESS / TEMU / itp.
+    code_value VARCHAR(255) NOT NULL,
+    type VARCHAR(20) NOT NULL,            -- AFFILIATE / DISCOUNT
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT affiliate_code_type_chk CHECK (type IN ('AFFILIATE', 'DISCOUNT'))
+);
+
+-- ============================
+--  Tabela: LinkCheckHistory
+-- ============================
+CREATE TABLE LinkCheckHistory (
+    id SERIAL PRIMARY KEY,
+    link_id INT NOT NULL,
+    status_code INT NOT NULL,
+    checked_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (link_id) REFERENCES Link(id) ON DELETE CASCADE
+);
+
+-- ============================
+--  Tabela: ClickStat
+-- ============================
+CREATE TABLE ClickStat (
+    id SERIAL PRIMARY KEY,
+    entity_type VARCHAR(50) NOT NULL,  -- video / product / link
+    entity_id INT NOT NULL,
+    clicked_at TIMESTAMP DEFAULT NOW()
+);

@@ -15,12 +15,17 @@ public class VideoController {
     private final VideoService videoService;
 
     @GetMapping
-    public List<VideoDTO> getAll() {
-        return videoService.getAll();
+    public List<VideoDTO> getAll(@RequestParam(required = false) Long categoryId) {
+        return videoService.getAll(categoryId);
     }
 
     @GetMapping("/{id}")
-    public VideoDTO getById(@PathVariable Integer id) {
+    public VideoDTO getById(@PathVariable Long id) {
         return videoService.getById(id);
+    }
+
+    @PostMapping
+    public VideoDTO create(@RequestBody VideoDTO dto) {
+        return videoService.create(dto);
     }
 }

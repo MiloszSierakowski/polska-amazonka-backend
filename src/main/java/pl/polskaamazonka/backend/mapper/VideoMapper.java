@@ -15,6 +15,13 @@ public class VideoMapper {
         dto.setPreviewImageUrl(video.getPreviewImageUrl());
         dto.setTitle(video.getTitle());
         dto.setIsActive(video.getIsActive());
+        dto.setProducts(
+                video.getVideoProducts() == null
+                        ? java.util.List.of()
+                        : video.getVideoProducts().stream()
+                        .map(videoProduct -> ProductMapper.toDTO(videoProduct.getProduct()))
+                        .toList()
+        );
         return dto;
     }
 }

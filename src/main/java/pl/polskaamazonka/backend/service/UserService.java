@@ -2,7 +2,8 @@ package pl.polskaamazonka.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import pl.polskaamazonka.backend.model.User;
+import pl.polskaamazonka.backend.dto.UserResponseDTO;
+import pl.polskaamazonka.backend.mapper.UserMapper;
 import pl.polskaamazonka.backend.repository.UserRepository;
 
 import java.util.List;
@@ -13,11 +14,9 @@ public class UserService {
 
     private final UserRepository userRepository;
 
-    public List<User> getAll() {
-        return userRepository.findAll();
-    }
-
-    public User getById(Integer id) {
-        return userRepository.findById(id).orElse(null);
+    public List<UserResponseDTO> getAllForAdmin() {
+        return userRepository.findAll().stream()
+                .map(UserMapper::toResponse)
+                .toList();
     }
 }

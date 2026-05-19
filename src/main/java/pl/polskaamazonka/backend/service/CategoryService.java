@@ -20,7 +20,7 @@ public class CategoryService {
                 .toList();
     }
 
-    public CategoryDTO getById(Integer id) {
+    public CategoryDTO getById(Long id) {
         return categoryRepository.findById(id)
                 .map(CategoryMapper::toDTO)
                 .orElse(null);

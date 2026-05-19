@@ -16,7 +16,7 @@ public class Video {
     @Id
     @ColumnDefault("nextval('video_id_seq'::regclass)")
     @Column(name = "id", nullable = false)
-    private Integer id;
+    private Long id;
 
     @Column(name = "tiktok_url", length = 500)
     private String tiktokUrl;

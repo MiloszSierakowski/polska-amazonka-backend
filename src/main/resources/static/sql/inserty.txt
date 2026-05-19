@@ -1,0 +1,87 @@
+-- ============================
+-- USER (ADMIN)
+-- ============================
+INSERT INTO users (login, password_hash, role)
+VALUES ('admin', '$2a$10$.swuHtV8Yvr/vIL6XBCgUON3GNcAHSrVYCIIEHB0ndFp..JnX.T3u', 'ADMIN');
+
+-- ============================
+-- KATEGORIE
+-- ============================
+INSERT INTO Category (name, image_url) VALUES
+    ('topka', '/categories/topka.png'),
+    ('temu', '/categories/temu.png'),
+    ('aliexpress', '/categories/aliexpress.png'),
+    ('dom', '/categories/dom.png'),
+    ('znaleziska', '/categories/znaleziska.png'),
+    ('dzieci', '/categories/dzieci.png'),
+    ('zwierzęta', '/categories/zwierzeta.png');
+
+-- ============================
+-- LINKI – SOCIAL
+-- ============================
+INSERT INTO Link (url, type, is_active, last_checked_at) VALUES
+    ('https://www.tiktok.com/@polskaamazonka', 'social', TRUE, NOW()),
+    ('https://www.instagram.com/polskaamazonka', 'social', TRUE, NOW()),
+    ('https://www.facebook.com/polskaamazonka', 'social', TRUE, NOW()),
+    ('https://www.youtube.com/@polskaamazonka', 'social', FALSE, NULL);
+
+-- ============================
+-- LINKI – PRODUKTY
+-- ============================
+INSERT INTO Link (url, type, is_active, last_checked_at) VALUES
+    ('https://pl.aliexpress.com/item/1005010213859411.html', 'product', TRUE, NOW()),
+    ('https://pl.aliexpress.com/item/1005009768318850.html', 'product', TRUE, NOW()),
+    ('https://pl.aliexpress.com/item/1005010002545698.html', 'product', TRUE, NOW()),
+    ('https://allegro.pl/produkt/joie-doxie-dog-krajalnica', 'product', TRUE, NOW());
+
+-- ============================
+-- FILMY
+-- ============================
+INSERT INTO Video (tiktok_url, title, is_active, created_at) VALUES
+    ('https://www.tiktok.com/@polskaamazonka/video/7575195848292715779', 'Domowe gadżety #1', TRUE, NOW()),
+    ('https://www.tiktok.com/@polskaamazonka/video/7571815645281701142', 'Znaleziska #1', TRUE, NOW());
+
+-- ============================
+-- VIDEO ↔ CATEGORY
+-- ============================
+INSERT INTO VideoCategory (video_id, category_id)
+SELECT v.id, c.id
+FROM Video v, Category c
+WHERE v.title = 'Domowe gadżety #1' AND c.name = 'dom';
+
+INSERT INTO VideoCategory (video_id, category_id)
+SELECT v.id, c.id
+FROM Video v, Category c
+WHERE v.title = 'Znaleziska #1' AND c.name = 'znaleziska';
+
+-- ============================
+-- PRODUKTY
+-- ============================
+INSERT INTO Product (name, product_link_id)
+VALUES
+    ('Miska do robota kuchennego', (SELECT id FROM Link WHERE url LIKE 'https://pl.aliexpress.com/item/1005010213859411%')),
+    ('Organizer na bluzy',        (SELECT id FROM Link WHERE url LIKE 'https://pl.aliexpress.com/item/1005010213859411%')),
+    ('Podajnik na taśmę',         (SELECT id FROM Link WHERE url LIKE 'https://pl.aliexpress.com/item/1005010213859411%')),
+    ('Album na puzzle',           (SELECT id FROM Link WHERE url LIKE 'https://pl.aliexpress.com/item/1005009768318850%')),
+    ('Miarka kuchenna',           (SELECT id FROM Link WHERE url LIKE 'https://pl.aliexpress.com/item/1005010002545698%')),
+    ('Pies krajalnica',           (SELECT id FROM Link WHERE url LIKE 'https://allegro.pl/produkt/joie-doxie-dog-krajalnica%'));
+
+-- ============================
+-- VIDEO ↔ PRODUCT
+-- ============================
+INSERT INTO VideoProduct (video_id, product_id)
+SELECT v.id, p.id
+FROM Video v, Product p
+WHERE v.title = 'Domowe gadżety #1';
+
+INSERT INTO VideoProduct (video_id, product_id)
+SELECT v.id, p.id
+FROM Video v, Product p
+WHERE v.title = 'Znaleziska #1' AND p.name = 'Pies krajalnica';
+
+-- ============================
+-- KODY ZNIŻKOWE (STARTOWE)
+-- ============================
+INSERT INTO AffiliateCode (platform, code_value, type, is_active) VALUES
+    ('ALIEXPRESS', 'IFP9MDH', 'DISCOUNT', TRUE),
+    ('TEMU', 'apk84760', 'DISCOUNT', TRUE);

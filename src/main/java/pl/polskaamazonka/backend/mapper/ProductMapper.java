@@ -9,12 +9,15 @@ public class ProductMapper {
         if (product == null) return null;
 
         ProductDTO dto = new ProductDTO();
-        dto.setId(product.getId());
+        dto.setId(product.getId() != null ? product.getId().longValue() : null);
         dto.setName(product.getName());
         dto.setImageUrl(product.getImageUrl());
         dto.setProductLinkId(
-                product.getProductLink() != null ? product.getProductLink().getId() : null
+                product.getProductLink() != null && product.getProductLink().getId() != null
+                        ? product.getProductLink().getId().longValue()
+                        : null
         );
+        dto.setProductLink(LinkMapper.toDTO(product.getProductLink()));
         return dto;
     }
 }

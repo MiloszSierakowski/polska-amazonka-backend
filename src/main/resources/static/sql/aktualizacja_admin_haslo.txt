@@ -1,0 +1,7 @@
+UPDATE users
+SET password_hash = '$2a$10$.swuHtV8Yvr/vIL6XBCgUON3GNcAHSrVYCIIEHB0ndFp..JnX.T3u'
+WHERE login = 'admin';
+
+INSERT INTO users (login, password_hash, role)
+SELECT 'admin', '$2a$10$.swuHtV8Yvr/vIL6XBCgUON3GNcAHSrVYCIIEHB0ndFp..JnX.T3u', 'ADMIN'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE login = 'admin');
