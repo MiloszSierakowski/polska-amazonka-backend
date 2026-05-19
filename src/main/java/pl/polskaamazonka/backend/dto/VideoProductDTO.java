@@ -6,7 +6,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class VideoProductDTO {
-    private Integer id;
+    private Long id;
     private Long videoId;
     private Long productId;
 }

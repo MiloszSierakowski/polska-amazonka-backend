@@ -13,7 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
+import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
@@ -43,6 +45,7 @@ public class VideoService {
     private final LinkRepository linkRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final ProductImageScraperService productImageScraperService;
 
     @Transactional(readOnly = true)
     public List<VideoDTO> getAll(Long categoryId) {
@@ -50,13 +53,13 @@ public class VideoService {
                 ? videoRepository.findAllByOrderByCreatedAtDesc()
                 : videoRepository.findAllByCategoryId(categoryId);
         return videos.stream()
-                .map(VideoMapper::toDTO)
+                .map(this::toDtoWithProducts)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public VideoDTO getById(Long id) {
-        return videoRepository.findById(id)
+        return videoRepository.findWithProductsById(id)
                 .map(VideoMapper::toDTO)
                 .orElse(null);
     }
@@ -75,7 +78,53 @@ public class VideoService {
         video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
         video.setCreatedAt(Instant.now());
         Video saved = videoRepository.save(video);
-        return VideoMapper.toDTO(saved);
+        if (dto.getProducts() != null) {
+            for (ProductDTO productDto : dto.getProducts()) {
+                attachProduct(saved, productDto);
+            }
+        }
+        return getById(saved.getId());
+    }
+
+    @Transactional
+    public VideoDTO addProduct(Long videoId, ProductDTO dto) {
+        Video video = videoRepository.findById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        attachProduct(video, dto);
+        return getById(videoId);
+    }
+
+    @Transactional
+    public VideoDTO detachProduct(Long videoId, Long productId) {
+        videoRepository.findById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        VideoProduct relation = videoProductRepository.findByVideo_IdAndProduct_Id(videoId, productId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        Product product = relation.getProduct();
+        Long linkId = null;
+        if (product != null && product.getProductLink() != null && product.getProductLink().getId() != null) {
+            linkId = product.getProductLink().getId();
+        }
+
+        long usageCount = product != null && product.getId() != null
+                ? videoProductRepository.countByProduct_Id(product.getId())
+                : 0L;
+
+        videoProductRepository.delete(relation);
+        videoProductRepository.flush();
+
+        if (usageCount <= 1L && product != null && product.getId() != null) {
+            productRepository.delete(product);
+            productRepository.flush();
+            if (linkId != null && productRepository.countByProductLink_Id(linkId) == 0L) {
+                linkRepository.findById(linkId)
+                        .filter(link -> "product".equals(link.getType()))
+                        .ifPresent(linkRepository::delete);
+            }
+        }
+
+        return getById(videoId);
     }
 
     @Transactional
@@ -98,7 +147,7 @@ public class VideoService {
             if (usageCount <= 1L) {
                 Link link = product.getProductLink();
                 if (link != null && link.getId() != null && "product".equals(link.getType())) {
-                    linkIdsToCheck.add(link.getId().longValue());
+                    linkIdsToCheck.add(link.getId());
                 }
                 videoProductRepository.delete(relation);
                 productRepository.delete(product);
@@ -113,9 +162,58 @@ public class VideoService {
 
         linkIdsToCheck.stream()
                 .filter(linkId -> productRepository.countByProductLink_Id(linkId) == 0L)
-                .forEach(linkId -> linkRepository.findById(linkId.intValue())
+                .forEach(linkId -> linkRepository.findById(linkId)
                         .filter(link -> "product".equals(link.getType()))
                         .ifPresent(linkRepository::delete));
+    }
+
+    private void attachProduct(Video video, ProductDTO dto) {
+        if (dto == null || dto.getName() == null || dto.getName().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String shopUrl = resolveShopUrl(dto);
+        if (shopUrl == null || shopUrl.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+
+        Link link = new Link();
+        link.setUrl(shopUrl);
+        link.setType("product");
+        link.setIsActive(Boolean.TRUE);
+        link.setLastCheckedAt(Instant.now());
+        link = linkRepository.save(link);
+
+        String imageUrl = dto.getImageUrl();
+        if (imageUrl == null || imageUrl.isBlank()) {
+            imageUrl = productImageScraperService.scrapeImageUrl(shopUrl);
+        }
+
+        Product product = new Product();
+        product.setName(dto.getName());
+        product.setImageUrl(imageUrl);
+        product.setProductLink(link);
+        product = productRepository.save(product);
+
+        VideoProduct videoProduct = new VideoProduct();
+        videoProduct.setVideo(video);
+        videoProduct.setProduct(product);
+        videoProductRepository.save(videoProduct);
+    }
+
+    private String resolveShopUrl(ProductDTO dto) {
+        if (dto.getProductLink() != null && dto.getProductLink().getUrl() != null && !dto.getProductLink().getUrl().isBlank()) {
+            return dto.getProductLink().getUrl();
+        }
+        return null;
+    }
+
+    private VideoDTO toDtoWithProducts(Video video) {
+        VideoDTO dto = VideoMapper.toDTO(video);
+        List<VideoProduct> relations = videoProductRepository.findByVideo_Id(video.getId());
+        dto.setProducts(relations.stream()
+                .map(vp -> ProductMapper.toDTO(vp.getProduct()))
+                .toList());
+        return dto;
     }
 
     private String fetchThumbnailUrlFromTikTokOembed(String tiktokUrl) {

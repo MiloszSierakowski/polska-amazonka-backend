@@ -13,9 +13,7 @@ public class ProductMapper {
         dto.setName(product.getName());
         dto.setImageUrl(product.getImageUrl());
         dto.setProductLinkId(
-                product.getProductLink() != null && product.getProductLink().getId() != null
-                        ? product.getProductLink().getId().longValue()
-                        : null
+                product.getProductLink() != null ? product.getProductLink().getId() : null
         );
         dto.setProductLink(LinkMapper.toDTO(product.getProductLink()));
         return dto;

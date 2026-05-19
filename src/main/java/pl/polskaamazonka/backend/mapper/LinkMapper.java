@@ -9,7 +9,7 @@ public class LinkMapper {
         if (link == null) return null;
 
         LinkDTO dto = new LinkDTO();
-        dto.setId(link.getId() != null ? link.getId().longValue() : null);
+        dto.setId(link.getId());
         dto.setUrl(link.getUrl());
         dto.setType(link.getType());
         dto.setIsActive(link.getIsActive());

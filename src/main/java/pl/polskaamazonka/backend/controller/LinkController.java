@@ -20,7 +20,7 @@ public class LinkController {
     }
 
     @GetMapping("/{id}")
-    public LinkDTO getById(@PathVariable Integer id) {
+    public LinkDTO getById(@PathVariable Long id) {
         return linkService.getById(id);
     }
 

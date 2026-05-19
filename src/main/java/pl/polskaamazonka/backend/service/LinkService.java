@@ -20,7 +20,7 @@ public class LinkService {
                 .toList();
     }
 
-    public LinkDTO getById(Integer id) {
+    public LinkDTO getById(Long id) {
         return linkRepository.findById(id)
                 .map(LinkMapper::toDTO)
                 .orElse(null);

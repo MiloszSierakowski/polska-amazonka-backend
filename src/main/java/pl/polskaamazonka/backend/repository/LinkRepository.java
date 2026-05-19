@@ -5,6 +5,6 @@ import pl.polskaamazonka.backend.model.Link;
 
 import java.util.List;
 
-public interface LinkRepository extends JpaRepository<Link, Integer> {
+public interface LinkRepository extends JpaRepository<Link, Long> {
     List<Link> findByType(String type);
 }
