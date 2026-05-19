@@ -3,7 +3,6 @@ package pl.polskaamazonka.backend.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
@@ -15,9 +14,8 @@ import java.util.List;
 @Table(name = "product")
 public class Product {
     @Id
-    @ColumnDefault("nextval('product_id_seq'::regclass)")
-    @Column(name = "id", nullable = false)
-    private Integer id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(name = "name", nullable = false)
     private String name;

@@ -8,5 +8,5 @@ import lombok.Setter;
 public class VideoProductDTO {
     private Integer id;
     private Long videoId;
-    private Integer productId;
+    private Long productId;
 }

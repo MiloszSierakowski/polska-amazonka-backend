@@ -61,6 +61,7 @@ public class VideoService {
                 .orElse(null);
     }
 
+    @Transactional
     public VideoDTO create(VideoDTO dto) {
         if (dto.getTiktokUrl() == null || dto.getTiktokUrl().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
@@ -91,7 +92,7 @@ public class VideoService {
                 videoProductRepository.delete(relation);
                 continue;
             }
-            Long productId = product.getId().longValue();
+            Long productId = product.getId();
             long usageCount = videoProductRepository.countByProduct_Id(productId);
 
             if (usageCount <= 1L) {
@@ -129,18 +130,16 @@ public class VideoService {
             HttpEntity<Void> request = new HttpEntity<>(headers);
             ResponseEntity<String> response = restTemplate.exchange(uri, HttpMethod.GET, request, String.class);
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY);
+                return null;
             }
             JsonNode root = objectMapper.readTree(response.getBody());
             JsonNode thumbnail = root.get("thumbnail_url");
             if (thumbnail == null || thumbnail.isNull() || thumbnail.asText().isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY);
+                return null;
             }
             return thumbnail.asText();
-        } catch (ResponseStatusException e) {
-            throw e;
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, null, e);
+            return null;
         }
     }
 }

@@ -20,7 +20,7 @@ public class ProductService {
                 .toList();
     }
 
-    public ProductDTO getById(Integer id) {
+    public ProductDTO getById(Long id) {
         return productRepository.findById(id)
                 .map(ProductMapper::toDTO)
                 .orElse(null);

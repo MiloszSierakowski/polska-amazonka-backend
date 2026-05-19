@@ -14,8 +14,7 @@ import java.util.List;
 @Table(name = "video")
 public class Video {
     @Id
-    @ColumnDefault("nextval('video_id_seq'::regclass)")
-    @Column(name = "id", nullable = false)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "tiktok_url", length = 500)

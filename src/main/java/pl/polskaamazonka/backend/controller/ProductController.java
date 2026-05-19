@@ -20,7 +20,7 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    public ProductDTO getById(@PathVariable Integer id) {
+    public ProductDTO getById(@PathVariable Long id) {
         return productService.getById(id);
     }
 }

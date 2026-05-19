@@ -9,7 +9,7 @@ public class ProductMapper {
         if (product == null) return null;
 
         ProductDTO dto = new ProductDTO();
-        dto.setId(product.getId() != null ? product.getId().longValue() : null);
+        dto.setId(product.getId());
         dto.setName(product.getName());
         dto.setImageUrl(product.getImageUrl());
         dto.setProductLinkId(
