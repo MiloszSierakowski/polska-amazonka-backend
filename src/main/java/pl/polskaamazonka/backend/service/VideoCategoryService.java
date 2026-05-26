@@ -17,7 +17,7 @@ public class VideoCategoryService {
         return videoCategoryRepository.findAll();
     }
 
-    public Videocategory getById(Integer id) {
+    public Videocategory getById(Long id) {
         return videoCategoryRepository.findById(id).orElse(null);
     }
 }

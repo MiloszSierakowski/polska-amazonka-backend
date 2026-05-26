@@ -8,13 +8,13 @@ VALUES ('admin', '$2a$10$.swuHtV8Yvr/vIL6XBCgUON3GNcAHSrVYCIIEHB0ndFp..JnX.T3u',
 -- KATEGORIE
 -- ============================
 INSERT INTO Category (name, image_url) VALUES
-    ('topka', '/categories/topka.png'),
-    ('temu', '/categories/temu.png'),
-    ('aliexpress', '/categories/aliexpress.png'),
-    ('dom', '/categories/dom.png'),
-    ('znaleziska', '/categories/znaleziska.png'),
-    ('dzieci', '/categories/dzieci.png'),
-    ('zwierzęta', '/categories/zwierzeta.png');
+    ('topka', '/uploads/categories/topka.png'),
+    ('temu', '/uploads/categories/temu.png'),
+    ('aliexpress', '/uploads/categories/aliexpress.png'),
+    ('dom', '/uploads/categories/dom.png'),
+    ('znaleziska', '/uploads/categories/znaleziska.png'),
+    ('dzieci', '/uploads/categories/dzieci.png'),
+    ('zwierzęta', '/uploads/categories/zwierzeta.png');
 
 -- ============================
 -- LINKI – SOCIAL

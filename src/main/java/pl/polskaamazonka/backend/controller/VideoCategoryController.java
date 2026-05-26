@@ -20,7 +20,7 @@ public class VideoCategoryController {
     }
 
     @GetMapping("/{id}")
-    public Videocategory getById(@PathVariable Integer id) {
+    public Videocategory getById(@PathVariable Long id) {
         return videoCategoryService.getById(id);
     }
 }
