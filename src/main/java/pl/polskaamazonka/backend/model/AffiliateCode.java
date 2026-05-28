@@ -16,9 +16,8 @@ import java.time.Instant;
 public class AffiliateCode {
 
     @Id
-    @ColumnDefault("nextval('affiliatecode_id_seq'::regclass)")
-    @Column(name = "id", nullable = false)
-    private Integer id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "platform", nullable = false, length = 50)
@@ -26,6 +25,9 @@ public class AffiliateCode {
 
     @Column(name = "code_value", nullable = false, length = 255)
     private String codeValue;
+
+    @Column(name = "description", length = 500)
+    private String description;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 20)

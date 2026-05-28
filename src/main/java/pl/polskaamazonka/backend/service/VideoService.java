@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
+import pl.polskaamazonka.backend.config.UploadPaths;
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
@@ -32,6 +33,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -46,8 +49,9 @@ public class VideoService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final ProductPageScraperService productPageScraperService;
+    private final VideoThumbnailStorageService videoThumbnailStorageService;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
         List<Video> videos = categoryId == null
                 ? videoRepository.findAllByOrderByCreatedAtDesc()
@@ -57,11 +61,14 @@ public class VideoService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public VideoDTO getById(Long id) {
-        return videoRepository.findWithProductsById(id)
-                .map(VideoMapper::toDTO)
+        Video video = videoRepository.findWithProductsById(id)
                 .orElse(null);
+        if (video == null) {
+            return null;
+        }
+        return toDtoWithProducts(video);
     }
 
     @Transactional
@@ -69,15 +76,15 @@ public class VideoService {
         if (dto.getTiktokUrl() == null || dto.getTiktokUrl().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        String thumbnailUrl = fetchThumbnailUrlFromTikTokOembed(dto.getTiktokUrl());
         Video video = new Video();
         video.setTiktokUrl(dto.getTiktokUrl());
         video.setLocalMp4Url(dto.getLocalMp4Url());
-        video.setPreviewImageUrl(thumbnailUrl);
         video.setTitle(dto.getTitle());
         video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
         video.setCreatedAt(Instant.now());
         Video saved = videoRepository.save(video);
+        saved.setPreviewImageUrl(resolveAndPersistPreview(saved));
+        saved = videoRepository.save(saved);
         if (dto.getProducts() != null) {
             for (ProductDTO productDto : dto.getProducts()) {
                 attachProduct(saved, productDto);
@@ -132,6 +139,7 @@ public class VideoService {
         Video video = videoRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
+        String previewToDelete = video.getPreviewImageUrl();
         List<VideoProduct> relations = new ArrayList<>(videoProductRepository.findByVideo_Id(id));
         Set<Long> linkIdsToCheck = new HashSet<>();
 
@@ -159,6 +167,7 @@ public class VideoService {
         videoCategoryRepository.deleteByVideo_Id(id);
         videoRepository.delete(video);
         videoRepository.flush();
+        videoThumbnailStorageService.deleteByPublicUrl(previewToDelete);
 
         linkIdsToCheck.stream()
                 .filter(linkId -> productRepository.countByProductLink_Id(linkId) == 0L)
@@ -217,11 +226,49 @@ public class VideoService {
 
     private VideoDTO toDtoWithProducts(Video video) {
         VideoDTO dto = VideoMapper.toDTO(video);
+        dto.setPreviewImageUrl(resolveAndPersistPreview(video));
         List<VideoProduct> relations = videoProductRepository.findByVideo_Id(video.getId());
         dto.setProducts(relations.stream()
                 .map(vp -> ProductMapper.toDTO(vp.getProduct()))
                 .toList());
         return dto;
+    }
+
+    private String resolveAndPersistPreview(Video video) {
+        String current = video.getPreviewImageUrl();
+        if (videoThumbnailStorageService.isReadableStoredUrl(current)) {
+            return current;
+        }
+        if (current != null && !current.isBlank() && !requiresRemoteRefresh(current)) {
+            String stored = videoThumbnailStorageService.storeFromRemoteUrl(current);
+            return persistPreviewIfChanged(video, current, stored);
+        }
+        String remote = fetchThumbnailUrlFromTikTokOembed(video.getTiktokUrl());
+        String stored = videoThumbnailStorageService.storeFromRemoteUrl(remote);
+        return persistPreviewIfChanged(video, current, stored);
+    }
+
+    private String persistPreviewIfChanged(Video video, String current, String stored) {
+        if (stored == null || stored.isBlank()) {
+            stored = videoThumbnailStorageService.ensureDefaultThumbnail();
+        }
+        if (!Objects.equals(current, stored)) {
+            video.setPreviewImageUrl(stored);
+            videoRepository.save(video);
+        }
+        return stored;
+    }
+
+    private boolean requiresRemoteRefresh(String previewUrl) {
+        String lower = previewUrl.toLowerCase(Locale.ROOT);
+        if (UploadPaths.isStoredVideoThumbnailUrl(previewUrl)) {
+            return false;
+        }
+        return lower.contains("tiktokcdn")
+                || lower.contains("tiktokv.com")
+                || lower.contains("muscdn")
+                || lower.contains("byteimg")
+                || lower.contains("ibyteimg");
     }
 
     private String fetchThumbnailUrlFromTikTokOembed(String tiktokUrl) {

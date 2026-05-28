@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.dto.LoginRequest;
 import pl.polskaamazonka.backend.dto.LoginResponse;
+import pl.polskaamazonka.backend.model.User;
 import pl.polskaamazonka.backend.model.enums.UserRole;
+import pl.polskaamazonka.backend.repository.UserRepository;
 import pl.polskaamazonka.backend.security.JwtService;
 import pl.polskaamazonka.backend.security.UserPrincipal;
 
@@ -19,6 +21,7 @@ public class AuthService {
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
     public LoginResponse login(LoginRequest request) {
         if (request.getLogin() == null || request.getLogin().isBlank()
@@ -32,7 +35,17 @@ public class AuthService {
         if (principal.getRole() != UserRole.ADMIN) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         String token = jwtService.generateToken(principal);
-        return new LoginResponse(token, principal.getId(), principal.getLogin(), principal.getRole());
+        return new LoginResponse(
+                token,
+                user.getId(),
+                user.getLogin(),
+                user.getRole(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail()
+        );
     }
 }

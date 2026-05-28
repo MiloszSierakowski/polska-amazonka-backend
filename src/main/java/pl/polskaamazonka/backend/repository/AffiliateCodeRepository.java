@@ -5,12 +5,19 @@ import pl.polskaamazonka.backend.model.AffiliateCode;
 import pl.polskaamazonka.backend.model.enums.AffiliateCodeType;
 import pl.polskaamazonka.backend.model.enums.Platform;
 
+import java.util.List;
 import java.util.Optional;
 
-public interface AffiliateCodeRepository extends JpaRepository<AffiliateCode, Integer> {
+public interface AffiliateCodeRepository extends JpaRepository<AffiliateCode, Long> {
 
     Optional<AffiliateCode> findFirstByPlatformAndTypeAndIsActiveTrue(
             Platform platform,
             AffiliateCodeType type
     );
+
+    List<AffiliateCode> findAllByTypeOrderByCreatedAtDesc(AffiliateCodeType type);
+
+    List<AffiliateCode> findAllByTypeAndIsActiveTrueOrderByCreatedAtDesc(AffiliateCodeType type);
+
+    Optional<AffiliateCode> findByIdAndType(Long id, AffiliateCodeType type);
 }
