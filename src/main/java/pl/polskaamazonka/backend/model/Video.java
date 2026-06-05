@@ -17,7 +17,7 @@ public class Video {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tiktok_url", length = 500)
+    @Column(name = "tiktok_url", columnDefinition = "TEXT")
     private String tiktokUrl;
 
     @Column(name = "local_mp4_url", length = 500)

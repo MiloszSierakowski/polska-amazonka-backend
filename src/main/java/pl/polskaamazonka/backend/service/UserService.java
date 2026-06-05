@@ -62,7 +62,7 @@ public class UserService {
 
         if (loginChanging) {
             if (userRepository.existsByLoginAndIdNot(requestedLogin, user.getId())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT);
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten login jest już zajęty.");
             }
             user.setLogin(requestedLogin);
         }
@@ -96,7 +96,7 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Aktualne hasło jest nieprawidłowe.");
         }
     }
 
