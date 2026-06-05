@@ -10,10 +10,13 @@ public final class UploadPaths {
     public static final String UPLOADS_DIR_NAME = "uploads";
     public static final String CATEGORIES_DIR_NAME = "categories";
     public static final String VIDEOS_DIR_NAME = "videos";
+    public static final String PRODUCTS_DIR_NAME = "products";
     public static final String CATEGORIES_PUBLIC_PREFIX = "/uploads/categories/";
     public static final String VIDEOS_PUBLIC_PREFIX = "/uploads/videos/";
+    public static final String PRODUCTS_PUBLIC_PREFIX = "/uploads/products/";
     public static final String LEGACY_CATEGORIES_PUBLIC_PREFIX = "/categories/";
     public static final String DEFAULT_VIDEO_THUMB_FILE_NAME = "default.png";
+    public static final String DEFAULT_PRODUCT_IMAGE_FILE_NAME = "default.png";
 
     private UploadPaths() {
     }
@@ -54,8 +57,22 @@ public final class UploadPaths {
         return directory;
     }
 
+    public static Path resolveProductsDirectory() {
+        Path directory = resolveUploadsRoot().resolve(PRODUCTS_DIR_NAME);
+        try {
+            Files.createDirectories(directory);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+        return directory;
+    }
+
     public static String defaultVideoThumbnailPublicUrl() {
         return VIDEOS_PUBLIC_PREFIX + DEFAULT_VIDEO_THUMB_FILE_NAME;
+    }
+
+    public static String defaultProductImagePublicUrl() {
+        return PRODUCTS_PUBLIC_PREFIX + DEFAULT_PRODUCT_IMAGE_FILE_NAME;
     }
 
     public static String normalizeCategoryImageUrl(String imageUrl) {
@@ -73,5 +90,9 @@ public final class UploadPaths {
 
     public static boolean isStoredVideoThumbnailUrl(String imageUrl) {
         return imageUrl != null && imageUrl.startsWith(VIDEOS_PUBLIC_PREFIX);
+    }
+
+    public static boolean isStoredProductImageUrl(String imageUrl) {
+        return imageUrl != null && imageUrl.startsWith(PRODUCTS_PUBLIC_PREFIX);
     }
 }

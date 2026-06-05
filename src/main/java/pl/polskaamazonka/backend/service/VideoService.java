@@ -18,6 +18,11 @@ import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
+import pl.polskaamazonka.backend.service.scraper.AllegroUrlNormalizer;
+import pl.polskaamazonka.backend.service.scraper.AmazonUrlNormalizer;
+import pl.polskaamazonka.backend.service.scraper.TemuUrlNormalizer;
+import pl.polskaamazonka.backend.service.scraper.ProductNameCleaner;
+import pl.polskaamazonka.backend.service.scraper.ProductPageData;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
@@ -50,6 +55,11 @@ public class VideoService {
     private final ObjectMapper objectMapper;
     private final ProductPageScraperService productPageScraperService;
     private final VideoThumbnailStorageService videoThumbnailStorageService;
+    private final ProductImageStorageService productImageStorageService;
+    private final ProductNameCleaner productNameCleaner;
+    private final AllegroUrlNormalizer allegroUrlNormalizer;
+    private final TemuUrlNormalizer temuUrlNormalizer;
+    private final AmazonUrlNormalizer amazonUrlNormalizer;
 
     @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
@@ -135,6 +145,44 @@ public class VideoService {
     }
 
     @Transactional
+    public VideoDTO resyncProduct(Long videoId, Long productId) {
+        Video video = videoRepository.findWithProductsById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        VideoProduct relation = videoProductRepository.findByVideo_IdAndProduct_Id(videoId, productId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        Product product = relation.getProduct();
+        if (product == null || product.getProductLink() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String shopUrl = product.getProductLink().getUrl();
+        if (shopUrl == null || shopUrl.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String previousImageUrl = product.getImageUrl();
+        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        String productName = scraped.getName();
+        if (productNameCleaner.isWeakScrapedName(productName, shopUrl)) {
+            String slugName = productNameCleaner.nameFromUrlSlug(shopUrl);
+            if (slugName != null && !slugName.isBlank()) {
+                productName = slugName;
+            } else {
+                productName = productNameCleaner.fallbackFromUrl(shopUrl);
+            }
+        }
+        String imageUrl = persistProductImage(scraped.getImageUrl(), shopUrl);
+        product.setName(productName);
+        product.setImageUrl(imageUrl);
+        productRepository.save(product);
+        if (previousImageUrl != null
+                && !previousImageUrl.isBlank()
+                && !previousImageUrl.equals(imageUrl)
+                && UploadPaths.isStoredProductImageUrl(previousImageUrl)) {
+            productImageStorageService.deleteByPublicUrl(previousImageUrl);
+        }
+        return toDtoWithProducts(video);
+    }
+
+    @Transactional
     public void delete(Long id) {
         Video video = videoRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -180,7 +228,7 @@ public class VideoService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        String shopUrl = resolveShopUrl(dto);
+        String shopUrl = normalizeShopUrl(resolveShopUrl(dto));
         if (shopUrl == null || shopUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
@@ -192,7 +240,7 @@ public class VideoService {
         link.setLastCheckedAt(Instant.now());
         link = linkRepository.save(link);
 
-        ProductPageScraperService.ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
         String productName;
         if (dto.getName() != null && !dto.getName().isBlank()) {
             productName = productPageScraperService.resolveProductName(shopUrl, dto.getName());
@@ -204,6 +252,7 @@ public class VideoService {
         if (imageUrl == null || imageUrl.isBlank()) {
             imageUrl = scraped.getImageUrl();
         }
+        imageUrl = persistProductImage(imageUrl, shopUrl);
 
         Product product = new Product();
         product.setName(productName);
@@ -294,5 +343,38 @@ public class VideoService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String normalizeShopUrl(String shopUrl) {
+        if (shopUrl == null || shopUrl.isBlank()) {
+            return shopUrl;
+        }
+        if (allegroUrlNormalizer.isAllegroUrl(shopUrl)) {
+            return allegroUrlNormalizer.normalize(shopUrl);
+        }
+        if (temuUrlNormalizer.isTemuUrl(shopUrl)) {
+            return temuUrlNormalizer.normalize(shopUrl);
+        }
+        if (amazonUrlNormalizer.isAmazonUrl(shopUrl)) {
+            return amazonUrlNormalizer.normalize(shopUrl);
+        }
+        return shopUrl.trim();
+    }
+
+    private String persistProductImage(String imageUrl, String shopUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return productImageStorageService.ensureDefaultImage();
+        }
+        if (UploadPaths.isStoredProductImageUrl(imageUrl)) {
+            return imageUrl;
+        }
+        String stored = productImageStorageService.tryStoreFromRemoteUrl(imageUrl, shopUrl);
+        if (stored != null) {
+            return stored;
+        }
+        if (productImageStorageService.isBrowserDisplayableRemoteUrl(imageUrl)) {
+            return imageUrl.trim();
+        }
+        return productImageStorageService.ensureDefaultImage();
     }
 }

@@ -40,6 +40,11 @@ public class VideoController {
         return videoService.detachProduct(videoId, productId);
     }
 
+    @PostMapping("/{videoId}/products/{productId}/resync")
+    public VideoDTO resyncProduct(@PathVariable Long videoId, @PathVariable Long productId) {
+        return videoService.resyncProduct(videoId, productId);
+    }
+
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         videoService.delete(id);
