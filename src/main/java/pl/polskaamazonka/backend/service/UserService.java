@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -13,9 +14,11 @@ import pl.polskaamazonka.backend.dto.UserResponseDTO;
 import pl.polskaamazonka.backend.mapper.UserMapper;
 import pl.polskaamazonka.backend.model.User;
 import pl.polskaamazonka.backend.repository.UserRepository;
+import pl.polskaamazonka.backend.security.JwtService;
 import pl.polskaamazonka.backend.security.UserPrincipal;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 @Service
@@ -23,8 +26,12 @@ import java.util.regex.Pattern;
 public class UserService {
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+    private static final int MIN_LOGIN_LENGTH = 3;
+    private static final int MIN_PASSWORD_LENGTH = 8;
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     public List<UserResponseDTO> getAllForAdmin() {
         return userRepository.findAll().stream()
@@ -44,15 +51,64 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         User user = findCurrentUser();
+        String currentLogin = user.getLogin();
+        String requestedLogin = normalizeLogin(request.getLogin());
+        boolean loginChanging = !Objects.equals(currentLogin, requestedLogin);
+        boolean passwordChanging = request.getNewPassword() != null && !request.getNewPassword().isBlank();
+
+        if (loginChanging || passwordChanging) {
+            verifyCurrentPassword(user, request.getCurrentPassword());
+        }
+
+        if (loginChanging) {
+            if (userRepository.existsByLoginAndIdNot(requestedLogin, user.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT);
+            }
+            user.setLogin(requestedLogin);
+        }
+
+        if (passwordChanging) {
+            String newPassword = request.getNewPassword().trim();
+            if (newPassword.length() < MIN_PASSWORD_LENGTH) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            }
+            user.setPasswordHash(passwordEncoder.encode(newPassword));
+        }
+
         user.setFirstName(normalizeOptionalText(request.getFirstName()));
         user.setLastName(normalizeOptionalText(request.getLastName()));
         String email = normalizeOptionalText(request.getEmail());
-        if (email != null && !email.isBlank() && !EMAIL_PATTERN.matcher(email).matches()) {
+        if (email != null && !EMAIL_PATTERN.matcher(email).matches()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         user.setEmail(email);
+
         User saved = userRepository.save(user);
-        return UserMapper.toProfileDTO(saved);
+        UserProfileDTO dto = UserMapper.toProfileDTO(saved);
+        if (loginChanging || passwordChanging) {
+            dto.setToken(jwtService.generateToken(new UserPrincipal(saved)));
+        }
+        return dto;
+    }
+
+    private void verifyCurrentPassword(User user, String currentPassword) {
+        if (currentPassword == null || currentPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+    }
+
+    private String normalizeLogin(String login) {
+        if (login == null || login.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String trimmed = login.trim();
+        if (trimmed.length() < MIN_LOGIN_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        return trimmed;
     }
 
     private User findCurrentUser() {
