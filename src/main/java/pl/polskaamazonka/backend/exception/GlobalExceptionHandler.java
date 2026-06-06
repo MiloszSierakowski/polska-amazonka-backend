@@ -41,6 +41,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(ActiveAffiliateCodeConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleActiveAffiliateCodeConflict(
+            ActiveAffiliateCodeConflictException exception,
+            HttpServletRequest request
+    ) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = "Istnieje już aktywny kod afiliacyjny dla tej platformy. Zmodyfikuj go lub najpierw dezaktywuj.";
+        }
+        ApiErrorResponse body = buildResponse(HttpStatus.BAD_REQUEST, request.getRequestURI(), message, null);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiErrorResponse> handleResponseStatus(
             ResponseStatusException exception,

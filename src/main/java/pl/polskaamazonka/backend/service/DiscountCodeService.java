@@ -70,6 +70,13 @@ public class DiscountCodeService {
         return DiscountCodeMapper.toDTO(saved);
     }
 
+    @Transactional
+    public void delete(Long id) {
+        AffiliateCode entity = affiliateCodeRepository.findByIdAndType(id, AffiliateCodeType.DISCOUNT)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        affiliateCodeRepository.delete(entity);
+    }
+
     private void validatePayload(DiscountCodeDTO dto) {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);

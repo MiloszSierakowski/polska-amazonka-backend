@@ -15,6 +15,12 @@ public interface AffiliateCodeRepository extends JpaRepository<AffiliateCode, Lo
             AffiliateCodeType type
     );
 
+    Optional<AffiliateCode> findFirstByPlatformAndTypeAndIsActiveTrueAndIdNot(
+            Platform platform,
+            AffiliateCodeType type,
+            Long id
+    );
+
     List<AffiliateCode> findAllByTypeOrderByCreatedAtDesc(AffiliateCodeType type);
 
     List<AffiliateCode> findAllByTypeAndIsActiveTrueOrderByCreatedAtDesc(AffiliateCodeType type);

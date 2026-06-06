@@ -33,4 +33,9 @@ public class AffiliateCodeController {
     public AffiliateCodeDTO update(@PathVariable Long id, @RequestBody AffiliateCodeDTO dto) {
         return affiliateCodeCrudService.update(id, dto);
     }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        affiliateCodeCrudService.delete(id);
+    }
 }

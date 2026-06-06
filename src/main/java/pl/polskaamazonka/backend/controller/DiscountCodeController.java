@@ -33,4 +33,9 @@ public class DiscountCodeController {
     public DiscountCodeDTO update(@PathVariable Long id, @RequestBody DiscountCodeDTO dto) {
         return discountCodeService.update(id, dto);
     }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        discountCodeService.delete(id);
+    }
 }
