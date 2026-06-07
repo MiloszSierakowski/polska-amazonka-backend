@@ -53,6 +53,7 @@ public class ShopService {
         shop.setName(dto.getName().trim());
         shop.setShopUrl(normalizeOptionalText(dto.getShopUrl()));
         shop.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        shop.setColorCode(normalizeColorCode(dto.getColorCode()));
         Shop saved = shopRepository.save(shop);
         categoryService.createForShop(saved);
         return ShopMapper.toDTO(saved);
@@ -71,6 +72,7 @@ public class ShopService {
         shop.setName(dto.getName().trim());
         shop.setShopUrl(normalizeOptionalText(dto.getShopUrl()));
         shop.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        shop.setColorCode(normalizeColorCode(dto.getColorCode()));
         Shop saved = shopRepository.save(shop);
         if (!saved.getName().equals(previousName)) {
             categoryService.syncNameWithShop(saved);
@@ -135,5 +137,19 @@ public class ShopService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeColorCode(String value) {
+        if (value == null || value.isBlank()) {
+            return "#64748B";
+        }
+        String trimmed = value.trim();
+        if (!trimmed.startsWith("#")) {
+            trimmed = "#" + trimmed;
+        }
+        if (!trimmed.matches("#[0-9A-Fa-f]{6}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        return trimmed.toUpperCase(Locale.ROOT);
     }
 }

@@ -10,4 +10,5 @@ public class ShopDTO {
     private String name;
     private String shopUrl;
     private Boolean isActive;
+    private String colorCode;
 }

@@ -38,6 +38,9 @@ public class Shop {
     @Column(name = "is_active")
     private Boolean isActive;
 
+    @Column(name = "color_code", length = 7)
+    private String colorCode;
+
     @OneToOne(mappedBy = "shop", fetch = FetchType.LAZY)
     private Category category;
 }
