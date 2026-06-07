@@ -39,4 +39,8 @@ public class AffiliateCode {
     @ColumnDefault("now()")
     @Column(name = "created_at")
     private Instant createdAt;
+
+    @ColumnDefault("0")
+    @Column(name = "display_order", nullable = false)
+    private Long displayOrder;
 }

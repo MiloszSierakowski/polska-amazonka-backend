@@ -21,9 +21,11 @@ public interface AffiliateCodeRepository extends JpaRepository<AffiliateCode, Lo
             Long id
     );
 
-    List<AffiliateCode> findAllByTypeOrderByCreatedAtDesc(AffiliateCodeType type);
+    List<AffiliateCode> findAllByTypeOrderByDisplayOrderAscIdAsc(AffiliateCodeType type);
 
-    List<AffiliateCode> findAllByTypeAndIsActiveTrueOrderByCreatedAtDesc(AffiliateCodeType type);
+    List<AffiliateCode> findAllByTypeAndIsActiveTrueOrderByDisplayOrderAscIdAsc(AffiliateCodeType type);
 
     Optional<AffiliateCode> findByIdAndType(Long id, AffiliateCodeType type);
+
+    long countByType(AffiliateCodeType type);
 }

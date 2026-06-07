@@ -23,17 +23,18 @@ public class DiscountCodeService {
 
     private final AffiliateCodeRepository affiliateCodeRepository;
     private final ShopRepository shopRepository;
+    private final AffiliateCodeDisplayOrderService displayOrderService;
 
     @Transactional(readOnly = true)
     public List<DiscountCodeDTO> getAll() {
-        return affiliateCodeRepository.findAllByTypeOrderByCreatedAtDesc(AffiliateCodeType.DISCOUNT).stream()
+        return affiliateCodeRepository.findAllByTypeOrderByDisplayOrderAscIdAsc(AffiliateCodeType.DISCOUNT).stream()
                 .map(DiscountCodeMapper::toDTO)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public List<PublicDiscountCodeDTO> getActivePublic() {
-        return affiliateCodeRepository.findAllByTypeAndIsActiveTrueOrderByCreatedAtDesc(AffiliateCodeType.DISCOUNT).stream()
+        return affiliateCodeRepository.findAllByTypeAndIsActiveTrueOrderByDisplayOrderAscIdAsc(AffiliateCodeType.DISCOUNT).stream()
                 .map(DiscountCodeMapper::toPublicDTO)
                 .toList();
     }
@@ -56,6 +57,7 @@ public class DiscountCodeService {
         entity.setType(AffiliateCodeType.DISCOUNT);
         entity.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
         entity.setCreatedAt(Instant.now());
+        entity.setDisplayOrder(displayOrderService.nextDisplayOrder(AffiliateCodeType.DISCOUNT));
         AffiliateCode saved = affiliateCodeRepository.save(entity);
         return DiscountCodeMapper.toDTO(saved);
     }
@@ -79,6 +81,11 @@ public class DiscountCodeService {
         AffiliateCode entity = affiliateCodeRepository.findByIdAndType(id, AffiliateCodeType.DISCOUNT)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         affiliateCodeRepository.delete(entity);
+    }
+
+    @Transactional
+    public void reorder(List<Long> orderedIds) {
+        displayOrderService.reorder(orderedIds, AffiliateCodeType.DISCOUNT);
     }
 
     private void validatePayload(DiscountCodeDTO dto) {

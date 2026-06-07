@@ -19,6 +19,11 @@ public class AffiliateCodeController {
         return affiliateCodeCrudService.getAll();
     }
 
+    @PutMapping("/reorder")
+    public void reorder(@RequestBody List<Long> orderedIds) {
+        affiliateCodeCrudService.reorder(orderedIds);
+    }
+
     @GetMapping("/{id}")
     public AffiliateCodeDTO getById(@PathVariable Long id) {
         return affiliateCodeCrudService.getById(id);

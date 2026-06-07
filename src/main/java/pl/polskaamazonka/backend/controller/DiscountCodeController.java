@@ -19,6 +19,11 @@ public class DiscountCodeController {
         return discountCodeService.getAll();
     }
 
+    @PutMapping("/reorder")
+    public void reorder(@RequestBody List<Long> orderedIds) {
+        discountCodeService.reorder(orderedIds);
+    }
+
     @GetMapping("/{id}")
     public DiscountCodeDTO getById(@PathVariable Long id) {
         return discountCodeService.getById(id);

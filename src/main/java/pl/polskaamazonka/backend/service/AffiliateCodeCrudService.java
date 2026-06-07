@@ -26,10 +26,11 @@ public class AffiliateCodeCrudService {
 
     private final AffiliateCodeRepository affiliateCodeRepository;
     private final ShopRepository shopRepository;
+    private final AffiliateCodeDisplayOrderService displayOrderService;
 
     @Transactional(readOnly = true)
     public List<AffiliateCodeDTO> getAll() {
-        return affiliateCodeRepository.findAllByTypeOrderByCreatedAtDesc(AffiliateCodeType.AFFILIATE).stream()
+        return affiliateCodeRepository.findAllByTypeOrderByDisplayOrderAscIdAsc(AffiliateCodeType.AFFILIATE).stream()
                 .map(AffiliateCodeMapper::toDTO)
                 .toList();
     }
@@ -54,6 +55,7 @@ public class AffiliateCodeCrudService {
         entity.setType(AffiliateCodeType.AFFILIATE);
         entity.setIsActive(isActive);
         entity.setCreatedAt(Instant.now());
+        entity.setDisplayOrder(displayOrderService.nextDisplayOrder(AffiliateCodeType.AFFILIATE));
         AffiliateCode saved = affiliateCodeRepository.save(entity);
         return AffiliateCodeMapper.toDTO(saved);
     }
@@ -79,6 +81,11 @@ public class AffiliateCodeCrudService {
         AffiliateCode entity = affiliateCodeRepository.findByIdAndType(id, AffiliateCodeType.AFFILIATE)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         affiliateCodeRepository.delete(entity);
+    }
+
+    @Transactional
+    public void reorder(List<Long> orderedIds) {
+        displayOrderService.reorder(orderedIds, AffiliateCodeType.AFFILIATE);
     }
 
     private void validateUniqueActiveAffiliateCode(Shop shop, boolean isActive, Long excludeId) {
