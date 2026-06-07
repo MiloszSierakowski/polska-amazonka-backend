@@ -1,7 +1,7 @@
 package pl.polskaamazonka.backend.service;
 
 import org.springframework.stereotype.Component;
-import pl.polskaamazonka.backend.model.enums.Platform;
+import pl.polskaamazonka.backend.model.Shop;
 
 import java.net.URI;
 import java.net.URLDecoder;
@@ -13,11 +13,14 @@ import java.util.Map;
 @Component
 public class AffiliateUrlBuilder {
 
-    public String apply(String productUrl, String codeValue, Platform platform) {
+    public String apply(String productUrl, String codeValue, Shop shop) {
         if (productUrl == null || productUrl.isBlank()) {
             return productUrl;
         }
         if (codeValue == null || codeValue.isBlank()) {
+            return productUrl.trim();
+        }
+        if (shop == null || shop.getSlug() == null || shop.getSlug().isBlank()) {
             return productUrl.trim();
         }
 
@@ -39,23 +42,23 @@ public class AffiliateUrlBuilder {
             return mergeQueryString(trimmedProductUrl, queryFragment);
         }
 
-        Map<String, String> params = platformParams(platform, trimmedCode);
+        Map<String, String> params = shopParams(shop.getSlug(), trimmedCode);
         return mergeQueryParams(trimmedProductUrl, params);
     }
 
-    private Map<String, String> platformParams(Platform platform, String codeValue) {
+    private Map<String, String> shopParams(String slug, String codeValue) {
         Map<String, String> params = new LinkedHashMap<>();
-        switch (platform) {
-            case ALIEXPRESS -> {
+        switch (slug) {
+            case "aliexpress" -> {
                 params.put("aff_fsk", codeValue);
                 params.put("aff_platform", "portals-tool");
             }
-            case TEMU -> {
+            case "temu" -> {
                 params.put("_p_rfs", "1");
                 params.put("referShareId", codeValue);
             }
-            case AMAZON -> params.put("tag", codeValue);
-            case ALLEGRO -> params.put("affiliation", codeValue);
+            case "amazon" -> params.put("tag", codeValue);
+            case "allegro" -> params.put("affiliation", codeValue);
         }
         return params;
     }

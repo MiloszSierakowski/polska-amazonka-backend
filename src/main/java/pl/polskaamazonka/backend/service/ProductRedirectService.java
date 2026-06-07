@@ -8,8 +8,9 @@ import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.model.AffiliateCode;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
-import pl.polskaamazonka.backend.model.enums.Platform;
+import pl.polskaamazonka.backend.model.Shop;
 import pl.polskaamazonka.backend.repository.ProductRepository;
+import pl.polskaamazonka.backend.repository.ShopRepository;
 import pl.polskaamazonka.backend.service.scraper.ProductPageParserFactory;
 
 import java.util.Optional;
@@ -22,6 +23,7 @@ public class ProductRedirectService {
     private final AffiliateCodeService affiliateCodeService;
     private final ProductPageParserFactory productPageParserFactory;
     private final AffiliateUrlBuilder affiliateUrlBuilder;
+    private final ShopRepository shopRepository;
 
     @Transactional(readOnly = true)
     public String resolveRedirectUrl(Long productId) {
@@ -34,12 +36,12 @@ public class ProductRedirectService {
         }
 
         String originalUrl = productLink.getUrl().trim();
-        Optional<Platform> platform = resolvePlatform(originalUrl);
-        if (platform.isEmpty()) {
+        Optional<Shop> shop = resolveShop(originalUrl);
+        if (shop.isEmpty()) {
             return originalUrl;
         }
 
-        Optional<AffiliateCode> affiliateCode = affiliateCodeService.getActiveAffiliateCode(platform.get());
+        Optional<AffiliateCode> affiliateCode = affiliateCodeService.getActiveAffiliateCode(shop.get());
         if (affiliateCode.isEmpty()) {
             return originalUrl;
         }
@@ -49,17 +51,14 @@ public class ProductRedirectService {
             return originalUrl;
         }
 
-        return affiliateUrlBuilder.apply(originalUrl, codeValue, platform.get());
+        return affiliateUrlBuilder.apply(originalUrl, codeValue, shop.get());
     }
 
-    private Optional<Platform> resolvePlatform(String productUrl) {
+    private Optional<Shop> resolveShop(String productUrl) {
         String platformKey = productPageParserFactory.detectPlatform(productUrl);
-        return switch (platformKey) {
-            case "aliexpress" -> Optional.of(Platform.ALIEXPRESS);
-            case "temu" -> Optional.of(Platform.TEMU);
-            case "amazon" -> Optional.of(Platform.AMAZON);
-            case "allegro" -> Optional.of(Platform.ALLEGRO);
-            default -> Optional.empty();
-        };
+        if (platformKey == null || platformKey.isBlank() || "generic".equals(platformKey)) {
+            return Optional.empty();
+        }
+        return shopRepository.findBySlug(platformKey);
     }
 }

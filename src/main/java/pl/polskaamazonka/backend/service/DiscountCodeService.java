@@ -9,9 +9,10 @@ import pl.polskaamazonka.backend.dto.DiscountCodeDTO;
 import pl.polskaamazonka.backend.dto.PublicDiscountCodeDTO;
 import pl.polskaamazonka.backend.mapper.DiscountCodeMapper;
 import pl.polskaamazonka.backend.model.AffiliateCode;
+import pl.polskaamazonka.backend.model.Shop;
 import pl.polskaamazonka.backend.model.enums.AffiliateCodeType;
-import pl.polskaamazonka.backend.model.enums.Platform;
 import pl.polskaamazonka.backend.repository.AffiliateCodeRepository;
+import pl.polskaamazonka.backend.repository.ShopRepository;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,6 +22,7 @@ import java.util.List;
 public class DiscountCodeService {
 
     private final AffiliateCodeRepository affiliateCodeRepository;
+    private final ShopRepository shopRepository;
 
     @Transactional(readOnly = true)
     public List<DiscountCodeDTO> getAll() {
@@ -46,8 +48,9 @@ public class DiscountCodeService {
     @Transactional
     public DiscountCodeDTO create(DiscountCodeDTO dto) {
         validatePayload(dto);
+        Shop shop = resolveShop(dto.getShopId());
         AffiliateCode entity = new AffiliateCode();
-        entity.setPlatform(parsePlatform(dto.getPlatform()));
+        entity.setShop(shop);
         entity.setCodeValue(dto.getCodeValue().trim());
         entity.setDescription(normalizeDescription(dto.getDescription()));
         entity.setType(AffiliateCodeType.DISCOUNT);
@@ -62,7 +65,8 @@ public class DiscountCodeService {
         validatePayload(dto);
         AffiliateCode entity = affiliateCodeRepository.findByIdAndType(id, AffiliateCodeType.DISCOUNT)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        entity.setPlatform(parsePlatform(dto.getPlatform()));
+        Shop shop = resolveShop(dto.getShopId());
+        entity.setShop(shop);
         entity.setCodeValue(dto.getCodeValue().trim());
         entity.setDescription(normalizeDescription(dto.getDescription()));
         entity.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
@@ -81,7 +85,7 @@ public class DiscountCodeService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        if (dto.getPlatform() == null || dto.getPlatform().isBlank()) {
+        if (dto.getShopId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         if (dto.getCodeValue() == null || dto.getCodeValue().isBlank()) {
@@ -92,15 +96,12 @@ public class DiscountCodeService {
         }
     }
 
-    private String normalizeDescription(String description) {
-        return description.trim();
+    private Shop resolveShop(Long shopId) {
+        return shopRepository.findById(shopId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST));
     }
 
-    private Platform parsePlatform(String platform) {
-        try {
-            return Platform.valueOf(platform.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        }
+    private String normalizeDescription(String description) {
+        return description.trim();
     }
 }

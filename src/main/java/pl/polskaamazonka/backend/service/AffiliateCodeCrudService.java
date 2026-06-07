@@ -9,9 +9,10 @@ import pl.polskaamazonka.backend.dto.AffiliateCodeDTO;
 import pl.polskaamazonka.backend.exception.ActiveAffiliateCodeConflictException;
 import pl.polskaamazonka.backend.mapper.AffiliateCodeMapper;
 import pl.polskaamazonka.backend.model.AffiliateCode;
+import pl.polskaamazonka.backend.model.Shop;
 import pl.polskaamazonka.backend.model.enums.AffiliateCodeType;
-import pl.polskaamazonka.backend.model.enums.Platform;
 import pl.polskaamazonka.backend.repository.AffiliateCodeRepository;
+import pl.polskaamazonka.backend.repository.ShopRepository;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,6 +25,7 @@ public class AffiliateCodeCrudService {
             "Istnieje już aktywny kod afiliacyjny dla tej platformy. Zmodyfikuj go lub najpierw dezaktywuj.";
 
     private final AffiliateCodeRepository affiliateCodeRepository;
+    private final ShopRepository shopRepository;
 
     @Transactional(readOnly = true)
     public List<AffiliateCodeDTO> getAll() {
@@ -42,11 +44,11 @@ public class AffiliateCodeCrudService {
     @Transactional
     public AffiliateCodeDTO create(AffiliateCodeDTO dto) {
         validatePayload(dto);
-        Platform platform = parsePlatform(dto.getPlatform());
+        Shop shop = resolveShop(dto.getShopId());
         boolean isActive = dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE;
-        validateUniqueActiveAffiliateCode(platform, isActive, null);
+        validateUniqueActiveAffiliateCode(shop, isActive, null);
         AffiliateCode entity = new AffiliateCode();
-        entity.setPlatform(platform);
+        entity.setShop(shop);
         entity.setCodeValue(dto.getCodeValue().trim());
         entity.setDescription(normalizeDescription(dto.getDescription()));
         entity.setType(AffiliateCodeType.AFFILIATE);
@@ -61,10 +63,10 @@ public class AffiliateCodeCrudService {
         validatePayload(dto);
         AffiliateCode entity = affiliateCodeRepository.findByIdAndType(id, AffiliateCodeType.AFFILIATE)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        Platform platform = parsePlatform(dto.getPlatform());
+        Shop shop = resolveShop(dto.getShopId());
         boolean isActive = dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE;
-        validateUniqueActiveAffiliateCode(platform, isActive, id);
-        entity.setPlatform(platform);
+        validateUniqueActiveAffiliateCode(shop, isActive, id);
+        entity.setShop(shop);
         entity.setCodeValue(dto.getCodeValue().trim());
         entity.setDescription(normalizeDescription(dto.getDescription()));
         entity.setIsActive(isActive);
@@ -79,17 +81,17 @@ public class AffiliateCodeCrudService {
         affiliateCodeRepository.delete(entity);
     }
 
-    private void validateUniqueActiveAffiliateCode(Platform platform, boolean isActive, Long excludeId) {
+    private void validateUniqueActiveAffiliateCode(Shop shop, boolean isActive, Long excludeId) {
         if (!isActive) {
             return;
         }
         boolean conflictExists = excludeId == null
-                ? affiliateCodeRepository.findFirstByPlatformAndTypeAndIsActiveTrue(
-                        platform,
+                ? affiliateCodeRepository.findFirstByShopAndTypeAndIsActiveTrue(
+                        shop,
                         AffiliateCodeType.AFFILIATE
                 ).isPresent()
-                : affiliateCodeRepository.findFirstByPlatformAndTypeAndIsActiveTrueAndIdNot(
-                        platform,
+                : affiliateCodeRepository.findFirstByShopAndTypeAndIsActiveTrueAndIdNot(
+                        shop,
                         AffiliateCodeType.AFFILIATE,
                         excludeId
                 ).isPresent();
@@ -102,12 +104,17 @@ public class AffiliateCodeCrudService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        if (dto.getPlatform() == null || dto.getPlatform().isBlank()) {
+        if (dto.getShopId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         if (dto.getCodeValue() == null || dto.getCodeValue().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+    }
+
+    private Shop resolveShop(Long shopId) {
+        return shopRepository.findById(shopId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST));
     }
 
     private String normalizeDescription(String description) {
@@ -116,13 +123,5 @@ public class AffiliateCodeCrudService {
         }
         String trimmed = description.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private Platform parsePlatform(String platform) {
-        try {
-            return Platform.valueOf(platform.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        }
     }
 }

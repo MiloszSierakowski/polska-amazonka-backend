@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.ColumnDefault;
 import pl.polskaamazonka.backend.model.enums.AffiliateCodeType;
-import pl.polskaamazonka.backend.model.enums.Platform;
 
 import java.time.Instant;
 
@@ -19,9 +18,9 @@ public class AffiliateCode {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "platform", nullable = false, length = 50)
-    private Platform platform;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "shop_id", nullable = false)
+    private Shop shop;
 
     @Column(name = "code_value", nullable = false, length = 255)
     private String codeValue;

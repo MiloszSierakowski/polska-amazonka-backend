@@ -2,6 +2,7 @@ package pl.polskaamazonka.backend.mapper;
 
 import pl.polskaamazonka.backend.dto.AffiliateCodeDTO;
 import pl.polskaamazonka.backend.model.AffiliateCode;
+import pl.polskaamazonka.backend.model.Shop;
 
 public class AffiliateCodeMapper {
 
@@ -11,7 +12,12 @@ public class AffiliateCodeMapper {
         }
         AffiliateCodeDTO dto = new AffiliateCodeDTO();
         dto.setId(entity.getId());
-        dto.setPlatform(entity.getPlatform() != null ? entity.getPlatform().name() : null);
+        Shop shop = entity.getShop();
+        if (shop != null) {
+            dto.setShopId(shop.getId());
+            dto.setShopName(shop.getName());
+            dto.setShopSlug(shop.getSlug());
+        }
         dto.setCodeValue(entity.getCodeValue());
         dto.setDescription(entity.getDescription());
         dto.setIsActive(entity.getIsActive());

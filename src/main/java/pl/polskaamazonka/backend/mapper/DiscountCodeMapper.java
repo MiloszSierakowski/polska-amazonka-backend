@@ -3,6 +3,7 @@ package pl.polskaamazonka.backend.mapper;
 import pl.polskaamazonka.backend.dto.DiscountCodeDTO;
 import pl.polskaamazonka.backend.dto.PublicDiscountCodeDTO;
 import pl.polskaamazonka.backend.model.AffiliateCode;
+import pl.polskaamazonka.backend.model.Shop;
 
 public class DiscountCodeMapper {
 
@@ -12,7 +13,12 @@ public class DiscountCodeMapper {
         }
         DiscountCodeDTO dto = new DiscountCodeDTO();
         dto.setId(entity.getId());
-        dto.setPlatform(entity.getPlatform() != null ? entity.getPlatform().name() : null);
+        Shop shop = entity.getShop();
+        if (shop != null) {
+            dto.setShopId(shop.getId());
+            dto.setShopName(shop.getName());
+            dto.setShopSlug(shop.getSlug());
+        }
         dto.setCodeValue(entity.getCodeValue());
         dto.setDescription(entity.getDescription());
         dto.setIsActive(entity.getIsActive());
@@ -26,7 +32,12 @@ public class DiscountCodeMapper {
         }
         PublicDiscountCodeDTO dto = new PublicDiscountCodeDTO();
         dto.setId(entity.getId());
-        dto.setPlatform(entity.getPlatform() != null ? entity.getPlatform().name() : null);
+        Shop shop = entity.getShop();
+        if (shop != null) {
+            dto.setShopId(shop.getId());
+            dto.setShopName(shop.getName());
+            dto.setShopSlug(shop.getSlug());
+        }
         dto.setCodeValue(entity.getCodeValue());
         dto.setDescription(entity.getDescription());
         return dto;

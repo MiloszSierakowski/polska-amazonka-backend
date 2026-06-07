@@ -5,7 +5,9 @@ import lombok.Data;
 @Data
 public class PublicDiscountCodeDTO {
     private Long id;
-    private String platform;
+    private Long shopId;
+    private String shopName;
+    private String shopSlug;
     private String codeValue;
     private String description;
 }

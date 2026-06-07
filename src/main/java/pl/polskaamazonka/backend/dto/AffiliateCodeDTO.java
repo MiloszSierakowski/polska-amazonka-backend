@@ -7,7 +7,9 @@ import java.time.Instant;
 @Data
 public class AffiliateCodeDTO {
     private Long id;
-    private String platform;
+    private Long shopId;
+    private String shopName;
+    private String shopSlug;
     private String codeValue;
     private String description;
     private Boolean isActive;
