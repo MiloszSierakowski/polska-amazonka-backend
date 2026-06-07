@@ -10,5 +10,9 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
 
     Optional<Shop> findBySlug(String slug);
 
+    Optional<Shop> findByCode(String code);
+
     List<Shop> findAllByIsActiveTrueOrderByNameAsc();
+
+    List<Shop> findAllByOrderByNameAsc();
 }

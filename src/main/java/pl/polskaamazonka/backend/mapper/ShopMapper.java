@@ -15,6 +15,7 @@ public class ShopMapper {
         dto.setCode(entity.getCode());
         dto.setName(entity.getName());
         dto.setShopUrl(entity.getShopUrl());
+        dto.setIsActive(entity.getIsActive());
         return dto;
     }
 }

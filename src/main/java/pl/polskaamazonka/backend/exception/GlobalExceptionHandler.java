@@ -54,6 +54,25 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(ShopCategoryDeletionException.class)
+    public ResponseEntity<ApiErrorResponse> handleShopCategoryDeletion(
+            ShopCategoryDeletionException exception,
+            HttpServletRequest request
+    ) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = "Nie można usunąć kategorii powiązanej ze sklepem. Usuń najpierw sklep.";
+        }
+        ApiErrorResponse body = buildResponse(
+                HttpStatus.BAD_REQUEST,
+                request.getRequestURI(),
+                message,
+                null
+        );
+        body.setErrorCode(ShopCategoryDeletionException.ERROR_CODE);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiErrorResponse> handleResponseStatus(
             ResponseStatusException exception,

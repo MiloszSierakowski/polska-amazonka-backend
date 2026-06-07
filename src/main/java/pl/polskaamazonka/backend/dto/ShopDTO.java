@@ -9,4 +9,5 @@ public class ShopDTO {
     private String code;
     private String name;
     private String shopUrl;
+    private Boolean isActive;
 }

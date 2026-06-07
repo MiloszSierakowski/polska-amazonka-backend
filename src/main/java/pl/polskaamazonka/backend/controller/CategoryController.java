@@ -21,6 +21,11 @@ public class CategoryController {
         return categoryService.getAll();
     }
 
+    @PutMapping("/reorder")
+    public void reorder(@RequestBody List<Long> orderedIds) {
+        categoryService.reorder(orderedIds);
+    }
+
     @GetMapping("/{id}")
     public CategoryDTO getById(@PathVariable Long id) {
         return categoryService.getById(id);
