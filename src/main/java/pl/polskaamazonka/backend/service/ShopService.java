@@ -10,7 +10,9 @@ import pl.polskaamazonka.backend.mapper.ShopMapper;
 import pl.polskaamazonka.backend.model.Shop;
 import pl.polskaamazonka.backend.repository.ShopRepository;
 
+import java.text.Normalizer;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -43,10 +45,8 @@ public class ShopService {
     @Transactional
     public ShopDTO create(ShopDTO dto) {
         validatePayload(dto);
-        String slug = normalizeSlug(dto.getSlug());
-        String code = normalizeCode(dto.getCode());
-        ensureUniqueSlug(slug, null);
-        ensureUniqueCode(code, null);
+        String slug = resolveSlugForName(dto.getName().trim(), null);
+        String code = codeFromSlug(slug);
         Shop shop = new Shop();
         shop.setSlug(slug);
         shop.setCode(code);
@@ -63,10 +63,8 @@ public class ShopService {
         validatePayload(dto);
         Shop shop = shopRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        String slug = normalizeSlug(dto.getSlug());
-        String code = normalizeCode(dto.getCode());
-        ensureUniqueSlug(slug, id);
-        ensureUniqueCode(code, id);
+        String slug = resolveSlugForName(dto.getName().trim(), id);
+        String code = codeFromSlug(slug);
         String previousName = shop.getName();
         shop.setSlug(slug);
         shop.setCode(code);
@@ -92,39 +90,43 @@ public class ShopService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        if (dto.getSlug() == null || dto.getSlug().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        }
-        if (dto.getCode() == null || dto.getCode().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        }
         if (dto.getName() == null || dto.getName().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
     }
 
-    private void ensureUniqueSlug(String slug, Long excludeId) {
-        shopRepository.findBySlug(slug).ifPresent(existing -> {
-            if (excludeId == null || !existing.getId().equals(excludeId)) {
+    private String resolveSlugForName(String name, Long excludeId) {
+        String baseSlug = slugFromName(name);
+        String candidate = baseSlug;
+        int suffix = 2;
+        while (isSlugTaken(candidate, excludeId)) {
+            candidate = baseSlug + suffix;
+            suffix++;
+            if (suffix > 100) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
             }
-        });
+        }
+        return candidate;
     }
 
-    private void ensureUniqueCode(String code, Long excludeId) {
-        shopRepository.findByCode(code).ifPresent(existing -> {
-            if (excludeId == null || !existing.getId().equals(excludeId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-            }
-        });
+    private boolean isSlugTaken(String slug, Long excludeId) {
+        return shopRepository.findBySlug(slug)
+                .map(existing -> excludeId == null || !existing.getId().equals(excludeId))
+                .orElse(false);
     }
 
-    private String normalizeSlug(String value) {
-        return value.trim().toLowerCase();
+    private String slugFromName(String name) {
+        String normalized = Normalizer.normalize(name.trim(), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        String slug = normalized.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        if (slug.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        return slug;
     }
 
-    private String normalizeCode(String value) {
-        return value.trim().toUpperCase();
+    private String codeFromSlug(String slug) {
+        return slug.trim().toUpperCase(Locale.ROOT);
     }
 
     private String normalizeOptionalText(String value) {
