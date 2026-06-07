@@ -104,6 +104,36 @@ public class VideoService {
     }
 
     @Transactional
+    public VideoDTO update(Long id, VideoDTO dto) {
+        Video video = videoRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (dto.getTiktokUrl() == null || dto.getTiktokUrl().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        boolean tiktokChanged = !Objects.equals(video.getTiktokUrl(), dto.getTiktokUrl());
+        String previousPreview = video.getPreviewImageUrl();
+        video.setTitle(dto.getTitle());
+        video.setTiktokUrl(dto.getTiktokUrl());
+        video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        if (dto.getLocalMp4Url() != null) {
+            video.setLocalMp4Url(dto.getLocalMp4Url());
+        }
+        if (tiktokChanged) {
+            video.setPreviewImageUrl(null);
+        }
+        videoRepository.save(video);
+        if (tiktokChanged) {
+            resolveAndPersistPreview(video);
+            if (previousPreview != null
+                    && !previousPreview.isBlank()
+                    && !Objects.equals(previousPreview, video.getPreviewImageUrl())) {
+                videoThumbnailStorageService.deleteByPublicUrl(previousPreview);
+            }
+        }
+        return getById(id);
+    }
+
+    @Transactional
     public VideoDTO addProduct(Long videoId, ProductDTO dto) {
         Video video = videoRepository.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));

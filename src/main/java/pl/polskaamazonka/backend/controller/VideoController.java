@@ -30,6 +30,11 @@ public class VideoController {
         return videoService.create(dto);
     }
 
+    @PutMapping("/{id}")
+    public VideoDTO update(@PathVariable Long id, @RequestBody VideoDTO dto) {
+        return videoService.update(id, dto);
+    }
+
     @PostMapping("/{videoId}/products")
     public VideoDTO addProduct(@PathVariable Long videoId, @RequestBody ProductDTO dto) {
         return videoService.addProduct(videoId, dto);
