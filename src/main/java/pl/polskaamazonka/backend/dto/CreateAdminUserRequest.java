@@ -6,10 +6,9 @@ import pl.polskaamazonka.backend.model.enums.UserRole;
 
 @Getter
 @Setter
-public class UserResponseDTO {
-    private Long id;
+public class CreateAdminUserRequest {
     private String login;
+    private String password;
     private UserRole role;
     private String email;
-    private Boolean isBlocked;
 }

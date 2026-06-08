@@ -32,7 +32,7 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(request.getLogin(), request.getPassword())
         );
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
-        if (principal.getRole() != UserRole.ADMIN) {
+        if (principal.getRole() != UserRole.ADMIN && principal.getRole() != UserRole.WORKER) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Brak uprawnień do logowania w panelu.");
         }
         User user = userRepository.findById(principal.getId())

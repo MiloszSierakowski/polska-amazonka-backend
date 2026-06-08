@@ -43,4 +43,7 @@ public class User {
 
     @Column(name = "email", length = 255)
     private String email;
+
+    @Column(name = "is_blocked", nullable = false)
+    private boolean blocked;
 }

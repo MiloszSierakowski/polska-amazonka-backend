@@ -8,9 +8,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import pl.polskaamazonka.backend.dto.CreateAdminUserRequest;
+import pl.polskaamazonka.backend.dto.UpdateUserBlockedRequest;
 import pl.polskaamazonka.backend.dto.UpdateUserProfileRequest;
 import pl.polskaamazonka.backend.dto.UserProfileDTO;
 import pl.polskaamazonka.backend.dto.UserResponseDTO;
+import pl.polskaamazonka.backend.model.enums.UserRole;
 import pl.polskaamazonka.backend.mapper.UserMapper;
 import pl.polskaamazonka.backend.model.User;
 import pl.polskaamazonka.backend.repository.UserRepository;
@@ -37,6 +40,64 @@ public class UserService {
         return userRepository.findAll().stream()
                 .map(UserMapper::toResponse)
                 .toList();
+    }
+
+    @Transactional
+    public UserResponseDTO createForAdmin(CreateAdminUserRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String login = normalizeLogin(request.getLogin());
+        if (userRepository.existsByLogin(login)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten login jest już zajęty.");
+        }
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        String password = request.getPassword().trim();
+        if (password.length() < MIN_PASSWORD_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        UserRole role = request.getRole() != null ? request.getRole() : UserRole.WORKER;
+        String email = normalizeOptionalText(request.getEmail());
+        if (email != null && !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        User user = new User();
+        user.setLogin(login);
+        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setRole(role);
+        user.setEmail(email);
+        user.setBlocked(false);
+        User saved = userRepository.save(user);
+        return UserMapper.toResponse(saved);
+    }
+
+    @Transactional
+    public void deleteForAdmin(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        UserPrincipal current = getCurrentPrincipal();
+        if (Objects.equals(current.getId(), user.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nie można usunąć własnego konta.");
+        }
+        userRepository.delete(user);
+    }
+
+    @Transactional
+    public UserResponseDTO setBlockedForAdmin(Long id, UpdateUserBlockedRequest request) {
+        if (request == null || request.getIsBlocked() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        UserPrincipal current = getCurrentPrincipal();
+        if (Objects.equals(current.getId(), user.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nie można zmienić blokady własnego konta.");
+        }
+        user.setBlocked(request.getIsBlocked());
+        User saved = userRepository.save(user);
+        return UserMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)

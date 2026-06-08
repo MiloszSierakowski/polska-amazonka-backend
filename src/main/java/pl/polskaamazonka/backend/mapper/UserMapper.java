@@ -14,6 +14,8 @@ public class UserMapper {
         dto.setId(user.getId());
         dto.setLogin(user.getLogin());
         dto.setRole(user.getRole());
+        dto.setEmail(user.getEmail());
+        dto.setIsBlocked(user.isBlocked());
         return dto;
     }
 

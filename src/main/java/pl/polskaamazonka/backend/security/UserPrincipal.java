@@ -17,12 +17,14 @@ public class UserPrincipal implements UserDetails {
     private final String login;
     private final String passwordHash;
     private final UserRole role;
+    private final boolean blocked;
 
     public UserPrincipal(User user) {
         this.id = user.getId();
         this.login = user.getLogin();
         this.passwordHash = user.getPasswordHash();
         this.role = user.getRole();
+        this.blocked = user.isBlocked();
     }
 
     @Override
@@ -47,7 +49,7 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return !blocked;
     }
 
     @Override
