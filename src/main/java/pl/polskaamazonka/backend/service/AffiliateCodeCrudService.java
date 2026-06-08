@@ -27,6 +27,7 @@ public class AffiliateCodeCrudService {
     private final AffiliateCodeRepository affiliateCodeRepository;
     private final ShopRepository shopRepository;
     private final AffiliateCodeDisplayOrderService displayOrderService;
+    private final ActivityLogService activityLogService;
 
     @Transactional(readOnly = true)
     public List<AffiliateCodeDTO> getAll() {
@@ -57,6 +58,7 @@ public class AffiliateCodeCrudService {
         entity.setCreatedAt(Instant.now());
         entity.setDisplayOrder(displayOrderService.nextDisplayOrder(AffiliateCodeType.AFFILIATE));
         AffiliateCode saved = affiliateCodeRepository.save(entity);
+        activityLogService.logAction("UTWORZENIE_KODU_AFILIACYJNEGO", "Dodano kod afiliacyjny o ID: " + saved.getId() + " (Wartość: " + saved.getCodeValue() + ", Sklep ID: " + shop.getId() + ")");
         return AffiliateCodeMapper.toDTO(saved);
     }
 
@@ -73,6 +75,7 @@ public class AffiliateCodeCrudService {
         entity.setDescription(normalizeDescription(dto.getDescription()));
         entity.setIsActive(isActive);
         AffiliateCode saved = affiliateCodeRepository.save(entity);
+        activityLogService.logAction("EDYCJA_KODU_AFILIACYJNEGO", "Zaktualizowano kod afiliacyjny o ID: " + id + " (Wartość: " + saved.getCodeValue() + ", Sklep ID: " + shop.getId() + ")");
         return AffiliateCodeMapper.toDTO(saved);
     }
 
@@ -80,12 +83,14 @@ public class AffiliateCodeCrudService {
     public void delete(Long id) {
         AffiliateCode entity = affiliateCodeRepository.findByIdAndType(id, AffiliateCodeType.AFFILIATE)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        activityLogService.logAction("USUNIĘCIE_KODU_AFILIACYJNEGO", "Usunięto kod afiliacyjny o ID: " + id + " (Wartość: " + entity.getCodeValue() + ")");
         affiliateCodeRepository.delete(entity);
     }
 
     @Transactional
     public void reorder(List<Long> orderedIds) {
         displayOrderService.reorder(orderedIds, AffiliateCodeType.AFFILIATE);
+        activityLogService.logAction("ZMIANA_KOLEJNOŚCI_KODÓW_AFILIACYJNYCH", "Zmieniono kolejność kodów afiliacyjnych (liczba: " + orderedIds.size() + ")");
     }
 
     private void validateUniqueActiveAffiliateCode(Shop shop, boolean isActive, Long excludeId) {

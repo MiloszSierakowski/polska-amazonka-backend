@@ -30,6 +30,7 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final VideoCategoryRepository videoCategoryRepository;
     private final CategoryFileStorageService categoryFileStorageService;
+    private final ActivityLogService activityLogService;
 
     @Transactional(readOnly = true)
     public List<CategoryDTO> getAll() {
@@ -57,6 +58,7 @@ public class CategoryService {
             category.setImageUrl(categoryFileStorageService.store(imageFile));
         }
         Category saved = categoryRepository.save(category);
+        activityLogService.logAction("UTWORZENIE_KATEGORII", "Dodano kategorię: " + saved.getName() + " (ID: " + saved.getId() + ")");
         return CategoryMapper.toDTO(saved);
     }
 
@@ -75,6 +77,7 @@ public class CategoryService {
             categoryFileStorageService.deleteByPublicUrl(previousImageUrl);
         }
         Category saved = categoryRepository.save(category);
+        activityLogService.logAction("EDYCJA_KATEGORII", "Zaktualizowano kategorię o ID: " + id + " (Nazwa: " + saved.getName() + ")");
         return CategoryMapper.toDTO(saved);
     }
 
@@ -107,6 +110,7 @@ public class CategoryService {
             category.setDisplayOrder((long) index);
         }
         categoryRepository.saveAll(categories);
+        activityLogService.logAction("ZMIANA_KOLEJNOŚCI_KATEGORII", "Zmieniono kolejność kategorii (liczba: " + orderedIds.size() + ")");
     }
 
     @Transactional
@@ -134,7 +138,9 @@ public class CategoryService {
         category.setName(shop.getName());
         category.setShop(shop);
         category.setDisplayOrder(nextDisplayOrder());
-        return categoryRepository.save(category);
+        Category saved = categoryRepository.save(category);
+        activityLogService.logAction("UTWORZENIE_KATEGORII", "Dodano kategorię sklepową: " + saved.getName() + " (ID: " + saved.getId() + ")");
+        return saved;
     }
 
     @Transactional
@@ -144,7 +150,8 @@ public class CategoryService {
         }
         categoryRepository.findByShop_Id(shop.getId()).ifPresent(category -> {
             category.setName(shop.getName());
-            categoryRepository.save(category);
+            Category saved = categoryRepository.save(category);
+            activityLogService.logAction("EDYCJA_KATEGORII", "Zaktualizowano kategorię o ID: " + saved.getId() + " (Nazwa: " + saved.getName() + ")");
         });
     }
 
@@ -155,6 +162,9 @@ public class CategoryService {
     }
 
     private void performDelete(Category category) {
+        String categoryName = category.getName() != null ? category.getName() : "-";
+        Long categoryId = category.getId();
+        activityLogService.logAction("USUNIĘCIE_KATEGORII", "Usunięto kategorię: " + categoryName + " (ID: " + categoryId + ")");
         String imageUrl = category.getImageUrl();
         videoCategoryRepository.deleteByCategory_Id(category.getId());
         categoryRepository.delete(category);

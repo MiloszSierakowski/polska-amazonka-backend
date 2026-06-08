@@ -60,6 +60,11 @@ public class VideoService {
     private final AllegroUrlNormalizer allegroUrlNormalizer;
     private final TemuUrlNormalizer temuUrlNormalizer;
     private final AmazonUrlNormalizer amazonUrlNormalizer;
+    private final LinkValidatorService linkValidatorService;
+    private final ActivityLogService activityLogService;
+
+    private static final String BROKEN_LINK_MESSAGE =
+            "Błąd zapisu: Serwer docelowy nie odpowiada lub link jest martwy";
 
     @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
@@ -69,6 +74,27 @@ public class VideoService {
         return videos.stream()
                 .map(this::toDtoWithProducts)
                 .toList();
+    }
+
+    @Transactional
+    public List<VideoDTO> getAllPublic(Long categoryId) {
+        List<Video> videos = categoryId == null
+                ? videoRepository.findAllByOrderByCreatedAtDesc()
+                : videoRepository.findAllByCategoryId(categoryId);
+        return videos.stream()
+                .map(this::toPublicDtoWithProducts)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    @Transactional
+    public VideoDTO getByIdPublic(Long id) {
+        Video video = videoRepository.findWithProductsById(id)
+                .orElse(null);
+        if (video == null) {
+            return null;
+        }
+        return toPublicDtoWithProducts(video);
     }
 
     @Transactional
@@ -100,6 +126,8 @@ public class VideoService {
                 attachProduct(saved, productDto);
             }
         }
+        String title = saved.getTitle() != null && !saved.getTitle().isBlank() ? saved.getTitle() : "-";
+        activityLogService.logAction("UTWORZENIE_FILMU", "Dodano film o tytule: " + title + " (ID: " + saved.getId() + ")");
         return getById(saved.getId());
     }
 
@@ -130,6 +158,8 @@ public class VideoService {
                 videoThumbnailStorageService.deleteByPublicUrl(previousPreview);
             }
         }
+        String title = dto.getTitle() != null && !dto.getTitle().isBlank() ? dto.getTitle() : "-";
+        activityLogService.logAction("EDYCJA_FILMU", "Zaktualizowano film o ID: " + id + " (Tytuł: " + title + ")");
         return getById(id);
     }
 
@@ -142,6 +172,40 @@ public class VideoService {
     }
 
     @Transactional
+    public VideoDTO updateProduct(Long videoId, Long productId, ProductDTO dto) {
+        videoRepository.findById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        VideoProduct relation = videoProductRepository.findByVideo_IdAndProduct_Id(videoId, productId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        Product product = relation.getProduct();
+        if (product == null || product.getProductLink() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        Link link = product.getProductLink();
+        String shopUrl = normalizeShopUrl(resolveShopUrl(dto));
+        if (shopUrl == null || shopUrl.isBlank()) {
+            shopUrl = link.getUrl();
+        }
+        if (shopUrl == null || shopUrl.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        }
+        ensureLinkReachable(shopUrl);
+        link.setUrl(shopUrl);
+        link.setIsBroken(false);
+        link.setLastCheckedAt(Instant.now());
+        linkRepository.save(link);
+        if (dto.getName() != null && !dto.getName().isBlank()) {
+            product.setName(dto.getName().trim());
+        }
+        if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
+            product.setImageUrl(dto.getImageUrl().trim());
+        }
+        productRepository.save(product);
+        activityLogService.logAction("EDYCJA_PRODUKTU", "Zaktualizowano produkt o ID: " + productId + " (Nowy URL: " + shopUrl + ")");
+        return getById(videoId);
+    }
+
+    @Transactional
     public VideoDTO detachProduct(Long videoId, Long productId) {
         videoRepository.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -149,6 +213,7 @@ public class VideoService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         Product product = relation.getProduct();
+        String productName = product != null && product.getName() != null ? product.getName() : "-";
         Long linkId = null;
         if (product != null && product.getProductLink() != null && product.getProductLink().getId() != null) {
             linkId = product.getProductLink().getId();
@@ -171,6 +236,7 @@ public class VideoService {
             }
         }
 
+        activityLogService.logAction("USUNIĘCIE_PRODUKTU", "Usunięto produkt o ID: " + productId + " z filmu o ID: " + videoId + " (" + productName + ")");
         return getById(videoId);
     }
 
@@ -209,6 +275,7 @@ public class VideoService {
                 && UploadPaths.isStoredProductImageUrl(previousImageUrl)) {
             productImageStorageService.deleteByPublicUrl(previousImageUrl);
         }
+        activityLogService.logAction("EDYCJA_PRODUKTU", "Odświeżono produkt o ID: " + productId + " w filmie o ID: " + videoId + " (Nazwa: " + productName + ")");
         return toDtoWithProducts(video);
     }
 
@@ -216,6 +283,9 @@ public class VideoService {
     public void delete(Long id) {
         Video video = videoRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        String title = video.getTitle() != null && !video.getTitle().isBlank() ? video.getTitle() : "-";
+        activityLogService.logAction("USUNIĘCIE_FILMU", "Usunięto film o ID: " + id + " (Tytuł: " + title + ")");
 
         String previewToDelete = video.getPreviewImageUrl();
         List<VideoProduct> relations = new ArrayList<>(videoProductRepository.findByVideo_Id(id));
@@ -262,11 +332,13 @@ public class VideoService {
         if (shopUrl == null || shopUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        ensureLinkReachable(shopUrl);
 
         Link link = new Link();
         link.setUrl(shopUrl);
         link.setType("product");
         link.setIsActive(Boolean.TRUE);
+        link.setIsBroken(false);
         link.setLastCheckedAt(Instant.now());
         link = linkRepository.save(link);
 
@@ -294,6 +366,7 @@ public class VideoService {
         videoProduct.setVideo(video);
         videoProduct.setProduct(product);
         videoProductRepository.save(videoProduct);
+        activityLogService.logAction("UTWORZENIE_PRODUKTU", "Dodano produkt o ID: " + product.getId() + " do filmu o ID: " + video.getId() + " (Nazwa: " + productName + ", URL: " + shopUrl + ")");
     }
 
     private String resolveShopUrl(ProductDTO dto) {
@@ -311,6 +384,39 @@ public class VideoService {
                 .map(vp -> ProductMapper.toDTO(vp.getProduct()))
                 .toList());
         return dto;
+    }
+
+    private VideoDTO toPublicDtoWithProducts(Video video) {
+        if (!Boolean.TRUE.equals(video.getIsActive())) {
+            return null;
+        }
+        VideoDTO dto = VideoMapper.toDTO(video);
+        dto.setPreviewImageUrl(resolveAndPersistPreview(video));
+        List<ProductDTO> products = videoProductRepository.findByVideo_Id(video.getId()).stream()
+                .map(VideoProduct::getProduct)
+                .filter(Objects::nonNull)
+                .filter(this::hasWorkingLink)
+                .map(ProductMapper::toDTO)
+                .toList();
+        if (products.isEmpty()) {
+            return null;
+        }
+        dto.setProducts(products);
+        return dto;
+    }
+
+    private boolean hasWorkingLink(Product product) {
+        Link link = product.getProductLink();
+        if (link == null) {
+            return false;
+        }
+        return !Boolean.TRUE.equals(link.getIsBroken());
+    }
+
+    private void ensureLinkReachable(String url) {
+        if (linkValidatorService.isBroken(url)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, BROKEN_LINK_MESSAGE);
+        }
     }
 
     private String resolveAndPersistPreview(Video video) {

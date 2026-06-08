@@ -16,4 +16,14 @@ public interface VideoProductRepository extends JpaRepository<VideoProduct, Long
     Optional<VideoProduct> findByVideo_IdAndProduct_Id(Long videoId, Long productId);
 
     long countByProduct_Id(Long productId);
+
+    @Query("""
+            SELECT vp FROM VideoProduct vp
+            JOIN FETCH vp.product p
+            JOIN FETCH p.productLink l
+            JOIN FETCH vp.video v
+            WHERE l.isBroken = true AND l.type = 'product'
+            ORDER BY v.title ASC, p.name ASC
+            """)
+    List<VideoProduct> findAllWithBrokenProductLinks();
 }

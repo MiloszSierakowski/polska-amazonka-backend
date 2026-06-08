@@ -40,6 +40,15 @@ public class VideoController {
         return videoService.addProduct(videoId, dto);
     }
 
+    @PutMapping("/{videoId}/products/{productId}")
+    public VideoDTO updateProduct(
+            @PathVariable Long videoId,
+            @PathVariable Long productId,
+            @RequestBody ProductDTO dto
+    ) {
+        return videoService.updateProduct(videoId, productId, dto);
+    }
+
     @DeleteMapping("/{videoId}/products/{productId}")
     public VideoDTO detachProduct(@PathVariable Long videoId, @PathVariable Long productId) {
         return videoService.detachProduct(videoId, productId);

@@ -20,6 +20,7 @@ public class ShopService {
 
     private final ShopRepository shopRepository;
     private final CategoryService categoryService;
+    private final ActivityLogService activityLogService;
 
     @Transactional(readOnly = true)
     public List<ShopDTO> getAll() {
@@ -56,6 +57,7 @@ public class ShopService {
         shop.setColorCode(normalizeColorCode(dto.getColorCode()));
         Shop saved = shopRepository.save(shop);
         categoryService.createForShop(saved);
+        activityLogService.logAction("UTWORZENIE_SKLEPU", "Dodano sklep: " + saved.getName() + " (ID: " + saved.getId() + ")");
         return ShopMapper.toDTO(saved);
     }
 
@@ -77,6 +79,7 @@ public class ShopService {
         if (!saved.getName().equals(previousName)) {
             categoryService.syncNameWithShop(saved);
         }
+        activityLogService.logAction("EDYCJA_SKLEPU", "Zaktualizowano sklep o ID: " + id + " (Nazwa: " + saved.getName() + ")");
         return ShopMapper.toDTO(saved);
     }
 
@@ -84,6 +87,7 @@ public class ShopService {
     public void delete(Long id) {
         Shop shop = shopRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        activityLogService.logAction("USUNIĘCIE_SKLEPU", "Usunięto sklep: " + shop.getName() + " (ID: " + id + ")");
         categoryService.deleteLinkedToShop(shop);
         shopRepository.delete(shop);
     }

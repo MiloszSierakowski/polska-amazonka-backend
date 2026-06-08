@@ -26,6 +26,10 @@ public class Link {
     @Column(name = "is_active")
     private Boolean isActive;
 
+    @ColumnDefault("false")
+    @Column(name = "is_broken", nullable = false)
+    private Boolean isBroken;
+
     @Column(name = "last_checked_at")
     private Instant lastCheckedAt;
 
