@@ -45,23 +45,26 @@ public class UserService {
     @Transactional
     public UserResponseDTO createForAdmin(CreateAdminUserRequest request) {
         if (request == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak danych użytkownika.");
         }
         String login = normalizeLogin(request.getLogin());
         if (userRepository.existsByLogin(login)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten login jest już zajęty.");
         }
         if (request.getPassword() == null || request.getPassword().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hasło jest wymagane.");
         }
         String password = request.getPassword().trim();
         if (password.length() < MIN_PASSWORD_LENGTH) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Hasło musi mieć co najmniej " + MIN_PASSWORD_LENGTH + " znaków."
+            );
         }
         UserRole role = request.getRole() != null ? request.getRole() : UserRole.WORKER;
         String email = normalizeOptionalText(request.getEmail());
         if (email != null && !EMAIL_PATTERN.matcher(email).matches()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Podany adres e-mail jest nieprawidłowy.");
         }
         User user = new User();
         user.setLogin(login);
@@ -163,11 +166,14 @@ public class UserService {
 
     private String normalizeLogin(String login) {
         if (login == null || login.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Login jest wymagany.");
         }
         String trimmed = login.trim();
         if (trimmed.length() < MIN_LOGIN_LENGTH) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Login musi mieć co najmniej " + MIN_LOGIN_LENGTH + " znaki."
+            );
         }
         return trimmed;
     }

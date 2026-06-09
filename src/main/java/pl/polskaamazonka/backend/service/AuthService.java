@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.dto.LoginRequest;
@@ -22,6 +23,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final ActivityLogService activityLogService;
 
     public LoginResponse login(LoginRequest request) {
         if (request.getLogin() == null || request.getLogin().isBlank()
@@ -38,6 +40,11 @@ public class AuthService {
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         String token = jwtService.generateToken(principal);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        activityLogService.logAction(
+                "ZALOGOWANIE",
+                "Użytkownik o loginie " + user.getLogin() + " zalogował się do systemu."
+        );
         return new LoginResponse(
                 token,
                 user.getId(),
@@ -46,6 +53,17 @@ public class AuthService {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getEmail()
+        );
+    }
+
+    public void logout() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal principal)) {
+            return;
+        }
+        activityLogService.logAction(
+                "WYLOGOWANIE",
+                "Użytkownik o loginie " + principal.getLogin() + " wylogował się z systemu."
         );
     }
 }
