@@ -3,11 +3,10 @@ FROM maven:3.9-eclipse-temurin-17-alpine AS build
 WORKDIR /app
 
 COPY pom.xml .
-COPY mvnw .
-COPY .mvn .mvn
 COPY src src
 
-RUN chmod +x mvnw && ./mvnw -B -DskipTests package
+# Use Maven from the base image (Linux-safe; avoids mvnw CRLF / wrapper issues on Windows hosts)
+RUN mvn -B -DskipTests package
 
 FROM eclipse-temurin:17-jre-alpine
 

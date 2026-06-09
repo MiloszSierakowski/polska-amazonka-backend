@@ -15,9 +15,8 @@ import java.time.Instant;
 @Table(name = "linkcheckhistory")
 public class Linkcheckhistory {
     @Id
-    @ColumnDefault("nextval('linkcheckhistory_id_seq'::regclass)")
-    @Column(name = "id", nullable = false)
-    private Integer id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @OnDelete(action = OnDeleteAction.CASCADE)

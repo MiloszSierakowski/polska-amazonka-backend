@@ -20,7 +20,7 @@ public class LinkCheckHistoryController {
     }
 
     @GetMapping("/{id}")
-    public Linkcheckhistory getById(@PathVariable Integer id) {
+    public Linkcheckhistory getById(@PathVariable Long id) {
         return linkCheckHistoryService.getById(id);
     }
 }

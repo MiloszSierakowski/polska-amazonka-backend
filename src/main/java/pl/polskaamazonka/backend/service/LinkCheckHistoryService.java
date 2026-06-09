@@ -17,7 +17,7 @@ public class LinkCheckHistoryService {
         return linkCheckHistoryRepository.findAll();
     }
 
-    public Linkcheckhistory getById(Integer id) {
+    public Linkcheckhistory getById(Long id) {
         return linkCheckHistoryRepository.findById(id).orElse(null);
     }
 }
