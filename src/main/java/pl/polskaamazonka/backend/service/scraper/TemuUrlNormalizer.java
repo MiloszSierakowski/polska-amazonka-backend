@@ -40,6 +40,10 @@ public class TemuUrlNormalizer {
                 return url.trim();
             }
             String scheme = uri.getScheme() == null ? "https" : uri.getScheme();
+            Long goodsId = extractGoodsId(url);
+            if (goodsId != null && !path.toLowerCase(Locale.ROOT).contains("-g-" + goodsId)) {
+                return scheme + "://" + host + path + "?goods_id=" + goodsId;
+            }
             return scheme + "://" + host + path;
         } catch (Exception e) {
             return url.trim();
