@@ -60,11 +60,7 @@ public class VideoService {
     private final AllegroUrlNormalizer allegroUrlNormalizer;
     private final TemuUrlNormalizer temuUrlNormalizer;
     private final AmazonUrlNormalizer amazonUrlNormalizer;
-    private final LinkValidatorService linkValidatorService;
     private final ActivityLogService activityLogService;
-
-    private static final String BROKEN_LINK_MESSAGE =
-            "Błąd zapisu: Serwer docelowy nie odpowiada lub link jest martwy";
 
     @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
@@ -189,7 +185,6 @@ public class VideoService {
         if (shopUrl == null || shopUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        ensureLinkReachable(shopUrl);
         link.setUrl(shopUrl);
         link.setIsBroken(false);
         link.setLastCheckedAt(Instant.now());
@@ -332,7 +327,6 @@ public class VideoService {
         if (shopUrl == null || shopUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        ensureLinkReachable(shopUrl);
 
         Link link = new Link();
         link.setUrl(shopUrl);
@@ -411,12 +405,6 @@ public class VideoService {
             return false;
         }
         return !Boolean.TRUE.equals(link.getIsBroken());
-    }
-
-    private void ensureLinkReachable(String url) {
-        if (linkValidatorService.isBroken(url)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, BROKEN_LINK_MESSAGE);
-        }
     }
 
     private String resolveAndPersistPreview(Video video) {
