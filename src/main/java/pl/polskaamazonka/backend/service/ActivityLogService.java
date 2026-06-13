@@ -1,6 +1,9 @@
 package pl.polskaamazonka.backend.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -11,6 +14,7 @@ import pl.polskaamazonka.backend.model.User;
 import pl.polskaamazonka.backend.model.enums.UserRole;
 import pl.polskaamazonka.backend.repository.ChangeLogRepository;
 import pl.polskaamazonka.backend.repository.UserRepository;
+import pl.polskaamazonka.backend.repository.specification.ChangeLogSpecifications;
 import pl.polskaamazonka.backend.security.UserPrincipal;
 
 import java.time.LocalDateTime;
@@ -35,8 +39,10 @@ public class ActivityLogService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChangeLogDTO> getRecentLogs() {
-        return changeLogRepository.findTop100ByOrderByCreatedAtDesc().stream()
+    public List<ChangeLogDTO> getRecentLogs(Long userId, LocalDateTime startDate, LocalDateTime endDate) {
+        Specification<ChangeLog> specification = ChangeLogSpecifications.withFilters(userId, startDate, endDate);
+        PageRequest pageRequest = PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return changeLogRepository.findAll(specification, pageRequest).stream()
                 .map(this::toDto)
                 .toList();
     }
