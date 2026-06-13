@@ -41,10 +41,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class VideoService {
+
+    private static final Pattern TIKTOK_VIDEO_ID_PATTERN = Pattern.compile("/video/(\\d+)");
 
     private final VideoRepository videoRepository;
     private final ProductRepository productRepository;
@@ -377,6 +380,7 @@ public class VideoService {
         dto.setProducts(relations.stream()
                 .map(vp -> ProductMapper.toDTO(vp.getProduct()))
                 .toList());
+        dto.setBlockReasons(resolveBlockReasons(video, relations));
         return dto;
     }
 
@@ -405,6 +409,37 @@ public class VideoService {
             return false;
         }
         return !Boolean.TRUE.equals(link.getIsBroken());
+    }
+
+    private List<String> resolveBlockReasons(Video video, List<VideoProduct> relations) {
+        List<String> reasons = new ArrayList<>();
+        if (!Boolean.TRUE.equals(video.getIsActive())) {
+            reasons.add("Film oznaczony jako nieaktywny");
+        }
+        if (!isRecognizedTikTokVideoUrl(video.getTiktokUrl())) {
+            reasons.add("Nieprawidłowy lub nierozpoznany link do wideo");
+        }
+        if (video.getId() != null && videoCategoryRepository.countByVideo_Id(video.getId()) == 0L) {
+            reasons.add("Brak przypisanej kategorii");
+        }
+        List<Product> products = relations.stream()
+                .map(VideoProduct::getProduct)
+                .filter(Objects::nonNull)
+                .toList();
+        long workingProductCount = products.stream()
+                .filter(this::hasWorkingLink)
+                .count();
+        if (products.isEmpty() || workingProductCount == 0L) {
+            reasons.add("Brak przypisanych i działających produktów");
+        }
+        return reasons;
+    }
+
+    private boolean isRecognizedTikTokVideoUrl(String tiktokUrl) {
+        if (tiktokUrl == null || tiktokUrl.isBlank()) {
+            return false;
+        }
+        return TIKTOK_VIDEO_ID_PATTERN.matcher(tiktokUrl.trim()).find();
     }
 
     private String resolveAndPersistPreview(Video video) {

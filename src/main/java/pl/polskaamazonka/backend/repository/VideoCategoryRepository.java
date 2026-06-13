@@ -7,4 +7,6 @@ public interface VideoCategoryRepository extends JpaRepository<Videocategory, Lo
     void deleteByVideo_Id(Long videoId);
 
     void deleteByCategory_Id(Long categoryId);
+
+    long countByVideo_Id(Long videoId);
 }

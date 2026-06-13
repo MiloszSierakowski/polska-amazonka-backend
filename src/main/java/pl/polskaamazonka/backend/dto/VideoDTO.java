@@ -15,4 +15,5 @@ public class VideoDTO {
     private String title;
     private Boolean isActive;
     private List<ProductDTO> products;
+    private List<String> blockReasons;
 }
