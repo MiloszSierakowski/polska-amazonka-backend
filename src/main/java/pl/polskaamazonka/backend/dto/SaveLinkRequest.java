@@ -8,5 +8,7 @@ import lombok.Setter;
 public class SaveLinkRequest {
     private String url;
     private String type;
+    private String imagePath;
+    private Long displayOrder;
     private Boolean isActive;
 }

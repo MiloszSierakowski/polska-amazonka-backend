@@ -12,6 +12,8 @@ public class LinkMapper {
         dto.setId(link.getId());
         dto.setUrl(link.getUrl());
         dto.setType(link.getType());
+        dto.setImagePath(link.getImagePath());
+        dto.setDisplayOrder(link.getDisplayOrder());
         dto.setIsActive(link.getIsActive());
         return dto;
     }

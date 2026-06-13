@@ -22,6 +22,13 @@ public class Link {
     @Column(name = "type", nullable = false, length = 50)
     private String type;
 
+    @Column(name = "image_path")
+    private String imagePath;
+
+    @ColumnDefault("0")
+    @Column(name = "display_order", nullable = false)
+    private Long displayOrder;
+
     @ColumnDefault("true")
     @Column(name = "is_active")
     private Boolean isActive;
@@ -33,4 +40,16 @@ public class Link {
     @Column(name = "last_checked_at")
     private Instant lastCheckedAt;
 
+    @PrePersist
+    public void prePersist() {
+        if (displayOrder == null) {
+            displayOrder = 0L;
+        }
+        if (isActive == null) {
+            isActive = Boolean.TRUE;
+        }
+        if (isBroken == null) {
+            isBroken = Boolean.FALSE;
+        }
+    }
 }

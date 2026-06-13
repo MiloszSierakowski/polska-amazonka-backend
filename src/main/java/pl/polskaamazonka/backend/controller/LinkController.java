@@ -26,7 +26,7 @@ public class LinkController {
 
     @GetMapping(params = "type")
     public List<LinkDTO> getByType(@RequestParam String type) {
-        return linkService.getByType(type);
+        return linkService.getPublicByType(type);
     }
 
 }
