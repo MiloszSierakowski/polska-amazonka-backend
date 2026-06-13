@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import pl.polskaamazonka.backend.dto.CreateAdminUserRequest;
+import pl.polskaamazonka.backend.dto.ResetUserPasswordResponse;
 import pl.polskaamazonka.backend.dto.UpdateUserBlockedRequest;
 import pl.polskaamazonka.backend.dto.UserResponseDTO;
 import pl.polskaamazonka.backend.service.UserService;
@@ -43,5 +44,10 @@ public class AdminUserController {
     @PatchMapping("/{id}/blocked")
     public UserResponseDTO setBlocked(@PathVariable Long id, @RequestBody UpdateUserBlockedRequest request) {
         return userService.setBlockedForAdmin(id, request);
+    }
+
+    @PostMapping("/{id}/password-reset")
+    public ResetUserPasswordResponse resetPassword(@PathVariable Long id) {
+        return userService.resetPasswordForAdmin(id);
     }
 }
