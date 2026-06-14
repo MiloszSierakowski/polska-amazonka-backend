@@ -38,6 +38,10 @@ public class UserService {
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
+    private static final String LOGIN_TAKEN_MESSAGE = "Ten login jest już zajęty.";
+    private static final String LOGIN_TAKEN_BLOCKED_MESSAGE =
+            "Ten login jest już zajęty (przypisany do zablokowanego użytkownika) i nie może zostać użyty ponownie.";
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -54,9 +58,7 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Brak danych użytkownika.");
         }
         String login = normalizeLogin(request.getLogin());
-        if (userRepository.existsByLogin(login)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten login jest już zajęty.");
-        }
+        ensureLoginAvailable(login);
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hasło jest wymagane.");
         }
@@ -145,9 +147,7 @@ public class UserService {
         }
 
         if (loginChanging) {
-            if (userRepository.existsByLoginAndIdNot(requestedLogin, user.getId())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ten login jest już zajęty.");
-            }
+            ensureLoginAvailableForUpdate(requestedLogin, user.getId());
             user.setLogin(requestedLogin);
         }
 
@@ -173,6 +173,21 @@ public class UserService {
             dto.setToken(jwtService.generateToken(new UserPrincipal(saved)));
         }
         return dto;
+    }
+
+    private void ensureLoginAvailable(String login) {
+        userRepository.findByLogin(login).ifPresent(this::throwLoginConflict);
+    }
+
+    private void ensureLoginAvailableForUpdate(String login, Long currentUserId) {
+        userRepository.findByLogin(login)
+                .filter(existing -> !Objects.equals(existing.getId(), currentUserId))
+                .ifPresent(this::throwLoginConflict);
+    }
+
+    private void throwLoginConflict(User existingUser) {
+        String message = existingUser.isBlocked() ? LOGIN_TAKEN_BLOCKED_MESSAGE : LOGIN_TAKEN_MESSAGE;
+        throw new ResponseStatusException(HttpStatus.CONFLICT, message);
     }
 
     private void verifyCurrentPassword(User user, String currentPassword) {
