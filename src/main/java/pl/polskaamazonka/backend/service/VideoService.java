@@ -16,6 +16,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 import pl.polskaamazonka.backend.config.UploadPaths;
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.ProductLinkVerifyResultDTO;
+import pl.polskaamazonka.backend.dto.QuickProductLinkValidationResult;
+import pl.polskaamazonka.backend.dto.QuickProductLinkValidationStatus;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
@@ -51,6 +53,11 @@ public class VideoService {
 
     private static final Pattern TIKTOK_VIDEO_ID_PATTERN = Pattern.compile("/video/(\\d+)");
 
+    private static final String INVALID_PRODUCT_URL_MESSAGE =
+            "Link nie wygląda jak bezpośrednia karta produktu. Wklej link do konkretnego produktu.";
+    private static final String UNSUPPORTED_PLATFORM_MESSAGE =
+            "Nieobsługiwana platforma. Obsługiwane platformy: Allegro, AliExpress, Temu, Amazon.";
+
     private final VideoRepository videoRepository;
     private final ProductRepository productRepository;
     private final VideoProductRepository videoProductRepository;
@@ -66,6 +73,7 @@ public class VideoService {
     private final TemuUrlNormalizer temuUrlNormalizer;
     private final AmazonUrlNormalizer amazonUrlNormalizer;
     private final ActivityLogService activityLogService;
+    private final QuickProductLinkValidator quickProductLinkValidator;
 
     @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
@@ -183,22 +191,37 @@ public class VideoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         Link link = product.getProductLink();
-        String shopUrl = normalizeShopUrl(resolveShopUrl(dto));
-        if (shopUrl == null || shopUrl.isBlank()) {
-            shopUrl = link.getUrl();
+        String previousUrl = link.getUrl();
+        String rawShopUrl = resolveShopUrl(dto);
+        if (rawShopUrl == null || rawShopUrl.isBlank()) {
+            rawShopUrl = previousUrl;
         }
-        if (shopUrl == null || shopUrl.isBlank()) {
+        if (rawShopUrl == null || rawShopUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        String candidateUrl = normalizeShopUrl(rawShopUrl.trim());
+        boolean urlChanged = !isSameShopUrl(previousUrl, candidateUrl);
+        String shopUrl = candidateUrl;
+        if (urlChanged) {
+            shopUrl = requireValidProductShopUrl(rawShopUrl.trim());
+            Instant checkedAt = Instant.now();
+            link.setIsBroken(false);
+            link.setNeedsReview(true);
+            link.setLastCheckedAt(checkedAt);
+            linkRepository.updateReviewFlags(link.getId(), false, true, checkedAt);
+        }
         link.setUrl(shopUrl);
-        linkRepository.updateReviewFlags(link.getId(), false, false, Instant.now());
+        if (urlChanged) {
+            applyProductMetadataAfterUrlChange(product, dto, shopUrl);
+        } else {
+            if (dto.getName() != null && !dto.getName().isBlank()) {
+                product.setName(dto.getName().trim());
+            }
+            if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
+                product.setImageUrl(dto.getImageUrl().trim());
+            }
+        }
         linkRepository.save(link);
-        if (dto.getName() != null && !dto.getName().isBlank()) {
-            product.setName(dto.getName().trim());
-        }
-        if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
-            product.setImageUrl(dto.getImageUrl().trim());
-        }
         productRepository.save(product);
         activityLogService.logAction("EDYCJA_PRODUKTU", "Zaktualizowano produkt o ID: " + productId + " (Nowy URL: " + shopUrl + ")");
         return getById(videoId);
@@ -482,17 +505,14 @@ public class VideoService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        String shopUrl = normalizeShopUrl(resolveShopUrl(dto));
-        if (shopUrl == null || shopUrl.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        }
+        String shopUrl = requireValidProductShopUrl(resolveShopUrl(dto));
 
         Link link = new Link();
         link.setUrl(shopUrl);
         link.setType("product");
         link.setIsActive(Boolean.TRUE);
         link.setIsBroken(false);
-        link.setNeedsReview(false);
+        link.setNeedsReview(true);
         link.setLastCheckedAt(Instant.now());
         link = linkRepository.save(link);
 
@@ -528,6 +548,31 @@ public class VideoService {
             return dto.getProductLink().getUrl();
         }
         return null;
+    }
+
+    private String requireValidProductShopUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adres URL produktu jest wymagany.");
+        }
+        QuickProductLinkValidationResult validation = quickProductLinkValidator.validate(rawUrl.trim());
+        if (validation.status() != QuickProductLinkValidationStatus.VALID_PRODUCT_URL) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, validationErrorMessage(validation));
+        }
+        String normalizedUrl = validation.normalizedUrl();
+        if (normalizedUrl == null || normalizedUrl.isBlank()) {
+            return normalizeShopUrl(rawUrl.trim());
+        }
+        return normalizedUrl;
+    }
+
+    private String validationErrorMessage(QuickProductLinkValidationResult validation) {
+        if (validation.status() == QuickProductLinkValidationStatus.UNSUPPORTED_PLATFORM) {
+            return UNSUPPORTED_PLATFORM_MESSAGE;
+        }
+        if (validation.reason() != null && !validation.reason().isBlank()) {
+            return validation.reason();
+        }
+        return INVALID_PRODUCT_URL_MESSAGE;
     }
 
     private VideoDTO toDtoWithProducts(Video video) {
@@ -672,6 +717,101 @@ public class VideoService {
             return amazonUrlNormalizer.normalize(shopUrl);
         }
         return shopUrl.trim();
+    }
+
+    private boolean isSameShopUrl(String left, String right) {
+        if (left == null || left.isBlank() || right == null || right.isBlank()) {
+            return Objects.equals(left, right);
+        }
+        return Objects.equals(normalizeShopUrl(left), normalizeShopUrl(right));
+    }
+
+    private void applyProductMetadataAfterUrlChange(Product product, ProductDTO dto, String shopUrl) {
+        String previousImageUrl = product.getImageUrl();
+        boolean nameExplicitlyUpdated = isExplicitNameUpdate(dto, product);
+        boolean imageExplicitlyUpdated = isExplicitImageUpdate(dto, product);
+
+        if (nameExplicitlyUpdated) {
+            product.setName(productPageScraperService.resolveProductName(shopUrl, dto.getName().trim()));
+        }
+        if (imageExplicitlyUpdated) {
+            String imageUrl = persistProductImage(dto.getImageUrl().trim(), shopUrl);
+            replaceProductImage(product, previousImageUrl, imageUrl);
+            previousImageUrl = imageUrl;
+        }
+        if (nameExplicitlyUpdated && imageExplicitlyUpdated) {
+            return;
+        }
+
+        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        if (!nameExplicitlyUpdated) {
+            if (hasMeaningfulScrapedName(scraped, shopUrl)) {
+                product.setName(resolveScrapedProductName(scraped, shopUrl));
+            } else {
+                product.setName(buildPendingProductName(shopUrl));
+            }
+        }
+        if (!imageExplicitlyUpdated) {
+            String scrapedImage = scraped != null ? scraped.getImageUrl() : null;
+            if (scrapedImage != null && !scrapedImage.isBlank()) {
+                String imageUrl = persistProductImage(scrapedImage, shopUrl);
+                replaceProductImage(product, previousImageUrl, imageUrl);
+            } else {
+                String defaultImage = productImageStorageService.ensureDefaultImage();
+                replaceProductImage(product, previousImageUrl, defaultImage);
+            }
+        }
+    }
+
+    private boolean isExplicitNameUpdate(ProductDTO dto, Product product) {
+        if (dto.getName() == null || dto.getName().isBlank()) {
+            return false;
+        }
+        String nextName = dto.getName().trim();
+        String currentName = product.getName() == null ? "" : product.getName().trim();
+        return !nextName.equals(currentName);
+    }
+
+    private boolean isExplicitImageUpdate(ProductDTO dto, Product product) {
+        if (dto.getImageUrl() == null || dto.getImageUrl().isBlank()) {
+            return false;
+        }
+        String nextImage = dto.getImageUrl().trim();
+        String currentImage = product.getImageUrl() == null ? "" : product.getImageUrl().trim();
+        return !nextImage.equals(currentImage);
+    }
+
+    private boolean hasMeaningfulScrapedName(ProductPageData scraped, String shopUrl) {
+        if (scraped == null || scraped.getName() == null || scraped.getName().isBlank()) {
+            return false;
+        }
+        String scrapedName = scraped.getName().trim();
+        if (productNameCleaner.isWeakScrapedName(scrapedName, shopUrl)) {
+            return false;
+        }
+        String fallback = productNameCleaner.fallbackFromUrl(shopUrl);
+        return fallback == null || !scrapedName.equalsIgnoreCase(fallback.trim());
+    }
+
+    private String buildPendingProductName(String shopUrl) {
+        String slugName = productNameCleaner.nameFromUrlSlug(shopUrl);
+        if (slugName != null && !slugName.isBlank()) {
+            String cleaned = productNameCleaner.clean(slugName);
+            if (cleaned != null && !cleaned.isBlank()) {
+                return "[Do weryfikacji] " + cleaned;
+            }
+        }
+        return "[Do weryfikacji] nowy link";
+    }
+
+    private void replaceProductImage(Product product, String previousImageUrl, String newImageUrl) {
+        product.setImageUrl(newImageUrl);
+        if (previousImageUrl != null
+                && !previousImageUrl.isBlank()
+                && !previousImageUrl.equals(newImageUrl)
+                && UploadPaths.isStoredProductImageUrl(previousImageUrl)) {
+            productImageStorageService.deleteByPublicUrl(previousImageUrl);
+        }
     }
 
     private String persistProductImage(String imageUrl, String shopUrl) {

@@ -1,8 +1,11 @@
 package pl.polskaamazonka.backend.service;
 
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import pl.polskaamazonka.backend.config.LinkValidationProperties;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.repository.LinkRepository;
 import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
@@ -16,11 +19,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor
 public class LinkValidatorService {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -76,42 +80,134 @@ public class LinkValidatorService {
 
     private final LinkRepository linkRepository;
     private final ProductPageScraperService productPageScraperService;
+    private final LinkValidationProperties linkValidationProperties;
+    private final TransactionTemplate transactionTemplate;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(CONNECT_TIMEOUT)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    @Transactional
+    LinkValidatorService(
+            LinkRepository linkRepository,
+            ProductPageScraperService productPageScraperService,
+            LinkValidationProperties linkValidationProperties,
+            PlatformTransactionManager transactionManager
+    ) {
+        this.linkRepository = linkRepository;
+        this.productPageScraperService = productPageScraperService;
+        this.linkValidationProperties = linkValidationProperties;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
     public void validateAllLinks() {
-        List<Link> links = linkRepository.findAll();
-        Instant checkedAt = Instant.now();
-        for (Link link : links) {
-            String url = link.getUrl();
-            if (url == null || url.isBlank()) {
-                linkRepository.updateReviewFlags(link.getId(), true, false, checkedAt);
-            } else if ("product".equals(link.getType())) {
-                ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(url.trim());
-                if (availability == ProductLinkAvailability.UNCERTAIN) {
-                    linkRepository.updateReviewFlags(
-                            link.getId(),
-                            Boolean.TRUE.equals(link.getIsBroken()),
-                            true,
-                            checkedAt
-                    );
-                } else {
-                    linkRepository.updateReviewFlags(
-                            link.getId(),
-                            availability == ProductLinkAvailability.BROKEN,
-                            false,
-                            checkedAt
-                    );
-                }
-            } else {
-                link.setIsBroken(isBroken(url.trim()));
-                link.setLastCheckedAt(checkedAt);
+        logScheduledValidationStart();
+        ScheduledLinkValidationStats stats = executeScheduledLinkValidation();
+        logScheduledValidationFinish(stats);
+    }
+
+    ScheduledLinkValidationStats executeScheduledLinkValidation() {
+        Instant startedAt = Instant.now();
+        ScheduledLinkValidationStats stats = new ScheduledLinkValidationStats(
+                startedAt,
+                linkValidationProperties.getMaxLinksPerRun(),
+                linkValidationProperties.getDelayMsBetweenChecks(),
+                linkValidationProperties.getMinHoursBetweenChecks()
+        );
+
+        List<Link> links = selectLinksForScheduledValidation();
+        stats.setSelected(links.size());
+
+        for (int index = 0; index < links.size(); index++) {
+            if (index > 0) {
+                pauseBetweenChecks();
+            }
+            Link link = links.get(index);
+            try {
+                ScheduledLinkValidationOutcome outcome = transactionTemplate.execute(
+                        status -> validateSingleLinkForSchedule(link)
+                );
+                stats.recordOutcome(outcome);
+            } catch (Exception exception) {
+                log.warn(
+                        "Scheduled validation failed for link id={}: {}",
+                        link.getId(),
+                        exception.getMessage()
+                );
+                transactionTemplate.executeWithoutResult(
+                        status -> markLinkValidationUncertain(link, Instant.now())
+                );
+                stats.recordTechnicalError();
             }
         }
-        linkRepository.saveAll(links.stream().filter(link -> !"product".equals(link.getType())).toList());
+
+        stats.finish();
+        return stats;
+    }
+
+    private void logScheduledValidationStart() {
+        log.info(
+                "Starting scheduled link validation: maxLinksPerRun={}, delayMs={}, minHoursBetweenChecks={}",
+                linkValidationProperties.getMaxLinksPerRun(),
+                linkValidationProperties.getDelayMsBetweenChecks(),
+                linkValidationProperties.getMinHoursBetweenChecks()
+        );
+    }
+
+    private void logScheduledValidationFinish(ScheduledLinkValidationStats stats) {
+        log.info(
+                "Scheduled link validation finished: selected={}, checked={}, working={}, broken={}, uncertain={}, technicalErrors={}, durationMs={}",
+                stats.getSelected(),
+                stats.getChecked(),
+                stats.getWorking(),
+                stats.getBroken(),
+                stats.getUncertain(),
+                stats.getTechnicalErrors(),
+                stats.getDurationMs()
+        );
+    }
+
+    List<Link> selectLinksForScheduledValidation() {
+        Instant cutoff = Instant.now().minus(
+                linkValidationProperties.getMinHoursBetweenChecks(),
+                ChronoUnit.HOURS
+        );
+        int maxLinks = Math.max(linkValidationProperties.getMaxLinksPerRun(), 0);
+        if (maxLinks == 0) {
+            return List.of();
+        }
+        return linkRepository.findLinksForScheduledValidation(
+                cutoff,
+                PageRequest.of(0, maxLinks)
+        );
+    }
+
+    ScheduledLinkValidationOutcome validateSingleLinkForSchedule(Link link) {
+        Instant checkedAt = Instant.now();
+        String url = link.getUrl();
+        if (url == null || url.isBlank()) {
+            linkRepository.updateReviewFlags(link.getId(), true, false, checkedAt);
+            return ScheduledLinkValidationOutcome.BROKEN;
+        }
+        if ("product".equals(link.getType())) {
+            ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(url.trim());
+            applyProductAvailability(link, availability, checkedAt);
+            return toOutcome(availability);
+        }
+        boolean broken = isBroken(url.trim());
+        link.setIsBroken(broken);
+        link.setLastCheckedAt(checkedAt);
+        linkRepository.save(link);
+        return broken
+                ? ScheduledLinkValidationOutcome.BROKEN
+                : ScheduledLinkValidationOutcome.WORKING;
+    }
+
+    private ScheduledLinkValidationOutcome toOutcome(ProductLinkAvailability availability) {
+        return switch (availability) {
+            case WORKING -> ScheduledLinkValidationOutcome.WORKING;
+            case BROKEN -> ScheduledLinkValidationOutcome.BROKEN;
+            case UNCERTAIN -> ScheduledLinkValidationOutcome.UNCERTAIN;
+        };
     }
 
     public boolean isBroken(String url) {
@@ -139,6 +235,41 @@ public class LinkValidatorService {
                 Thread.currentThread().interrupt();
             }
             return true;
+        }
+    }
+
+    private void applyProductAvailability(Link link, ProductLinkAvailability availability, Instant checkedAt) {
+        if (availability == ProductLinkAvailability.UNCERTAIN) {
+            markLinkValidationUncertain(link, checkedAt);
+            return;
+        }
+        linkRepository.updateReviewFlags(
+                link.getId(),
+                availability == ProductLinkAvailability.BROKEN,
+                false,
+                checkedAt
+        );
+    }
+
+    private void markLinkValidationUncertain(Link link, Instant checkedAt) {
+        linkRepository.updateReviewFlags(
+                link.getId(),
+                Boolean.TRUE.equals(link.getIsBroken()),
+                true,
+                checkedAt
+        );
+    }
+
+    private void pauseBetweenChecks() {
+        long delayMs = linkValidationProperties.getDelayMsBetweenChecks();
+        if (delayMs <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            log.warn("Scheduled link validation interrupted during delay");
         }
     }
 
