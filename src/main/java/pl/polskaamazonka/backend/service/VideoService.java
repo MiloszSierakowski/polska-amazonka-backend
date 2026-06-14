@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 import pl.polskaamazonka.backend.config.UploadPaths;
 import pl.polskaamazonka.backend.dto.ProductDTO;
+import pl.polskaamazonka.backend.dto.ProductLinkVerifyResultDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
@@ -22,6 +23,7 @@ import pl.polskaamazonka.backend.service.scraper.AllegroUrlNormalizer;
 import pl.polskaamazonka.backend.service.scraper.AmazonUrlNormalizer;
 import pl.polskaamazonka.backend.service.scraper.TemuUrlNormalizer;
 import pl.polskaamazonka.backend.service.scraper.ProductNameCleaner;
+import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
 import pl.polskaamazonka.backend.service.scraper.ProductPageData;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
@@ -189,8 +191,7 @@ public class VideoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         link.setUrl(shopUrl);
-        link.setIsBroken(false);
-        link.setLastCheckedAt(Instant.now());
+        linkRepository.updateReviewFlags(link.getId(), false, false, Instant.now());
         linkRepository.save(link);
         if (dto.getName() != null && !dto.getName().isBlank()) {
             product.setName(dto.getName().trim());
@@ -278,6 +279,161 @@ public class VideoService {
     }
 
     @Transactional
+    public ProductLinkVerifyResultDTO verifyProductLink(Long videoId, Long productId) {
+        Product product = loadProductForVideo(videoId, productId);
+        Link link = requireProductLink(product);
+        String shopUrl = link.getUrl().trim();
+        ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(shopUrl);
+        persistLinkAvailability(link, availability);
+
+        ProductPageData scraped = scrapeSafely(shopUrl);
+        Link refreshedLink = linkRepository.findById(link.getId()).orElse(link);
+        ProductLinkVerifyResultDTO result = new ProductLinkVerifyResultDTO();
+        result.setVideoId(videoId);
+        result.setProductId(productId);
+        result.setVerificationUncertain(availability == ProductLinkAvailability.UNCERTAIN);
+        result.setNeedsReview(refreshedLink.getNeedsReview());
+        result.setIsBroken(refreshedLink.getIsBroken());
+        result.setLinkWorking(availability == ProductLinkAvailability.WORKING);
+        result.setCurrentTitle(product.getName());
+        result.setCurrentImageUrl(product.getImageUrl());
+        result.setStoreTitle(resolveScrapedProductName(scraped, shopUrl));
+        result.setStoreImageUrl(scraped != null ? scraped.getImageUrl() : null);
+        String availabilityLabel = switch (availability) {
+            case WORKING -> "sprawny";
+            case BROKEN -> "niesprawny";
+            case UNCERTAIN -> "niepewny";
+        };
+        activityLogService.logAction(
+                "WERYFIKACJA_LINKU",
+                "Zweryfikowano link produktu o ID: " + productId + " w filmie o ID: " + videoId
+                        + " (Wynik: " + availabilityLabel + ")"
+        );
+        return result;
+    }
+
+    @Transactional
+    public void setProductLinkFlag(Long videoId, Long productId, boolean isBroken, boolean needsReview) {
+        Product product = loadProductForVideo(videoId, productId);
+        Link link = requireProductLink(product);
+        Instant checkedAt = Instant.now();
+        linkRepository.updateReviewFlags(link.getId(), isBroken, needsReview, checkedAt);
+        String statusLabel = needsReview ? "wymaga sprawdzenia" : (isBroken ? "niesprawny" : "sprawny");
+        activityLogService.logAction(
+                "RECZNA_FLAGA_LINKU",
+                "Ręcznie ustawiono flagę linku produktu o ID: " + productId + " w filmie o ID: " + videoId
+                        + " (Wynik: " + statusLabel + ")"
+        );
+    }
+
+    private void persistLinkAvailability(Link link, ProductLinkAvailability availability) {
+        Instant checkedAt = Instant.now();
+        boolean isBroken;
+        boolean needsReview;
+        switch (availability) {
+            case WORKING -> {
+                isBroken = false;
+                needsReview = false;
+            }
+            case BROKEN -> {
+                isBroken = true;
+                needsReview = false;
+            }
+            case UNCERTAIN -> {
+                isBroken = Boolean.TRUE.equals(link.getIsBroken());
+                needsReview = true;
+            }
+            default -> throw new IllegalStateException("Unexpected availability: " + availability);
+        }
+        linkRepository.updateReviewFlags(link.getId(), isBroken, needsReview, checkedAt);
+        link.setIsBroken(isBroken);
+        link.setNeedsReview(needsReview);
+        link.setLastCheckedAt(checkedAt);
+    }
+
+    @Transactional
+    public VideoDTO applyStoreTitleToProduct(Long videoId, Long productId) {
+        Product product = loadProductForVideo(videoId, productId);
+        Link link = requireProductLink(product);
+        String shopUrl = link.getUrl().trim();
+        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        String productName = resolveScrapedProductName(scraped, shopUrl);
+        product.setName(productName);
+        productRepository.save(product);
+        activityLogService.logAction(
+                "EDYCJA_PRODUKTU",
+                "Nadpisano tytuł produktu o ID: " + productId + " z danych sklepu (Film ID: " + videoId + ")"
+        );
+        return getById(videoId);
+    }
+
+    @Transactional
+    public VideoDTO applyStoreImageToProduct(Long videoId, Long productId) {
+        Product product = loadProductForVideo(videoId, productId);
+        Link link = requireProductLink(product);
+        String shopUrl = link.getUrl().trim();
+        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        String previousImageUrl = product.getImageUrl();
+        String imageUrl = persistProductImage(scraped != null ? scraped.getImageUrl() : null, shopUrl);
+        product.setImageUrl(imageUrl);
+        productRepository.save(product);
+        if (previousImageUrl != null
+                && !previousImageUrl.isBlank()
+                && !previousImageUrl.equals(imageUrl)
+                && UploadPaths.isStoredProductImageUrl(previousImageUrl)) {
+            productImageStorageService.deleteByPublicUrl(previousImageUrl);
+        }
+        activityLogService.logAction(
+                "EDYCJA_PRODUKTU",
+                "Nadpisano obrazek produktu o ID: " + productId + " z danych sklepu (Film ID: " + videoId + ")"
+        );
+        return getById(videoId);
+    }
+
+    private Product loadProductForVideo(Long videoId, Long productId) {
+        videoRepository.findById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        VideoProduct relation = videoProductRepository.findByVideo_IdAndProduct_IdWithLink(videoId, productId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        Product product = relation.getProduct();
+        if (product == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return product;
+    }
+
+    private Link requireProductLink(Product product) {
+        Link link = product.getProductLink();
+        if (link == null || link.getUrl() == null || link.getUrl().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Produkt nie ma prawidłowego linku do sklepu.");
+        }
+        return link;
+    }
+
+    private ProductPageData scrapeSafely(String shopUrl) {
+        try {
+            return productPageScraperService.scrape(shopUrl);
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private String resolveScrapedProductName(ProductPageData scraped, String shopUrl) {
+        if (scraped == null || scraped.getName() == null || scraped.getName().isBlank()) {
+            return productNameCleaner.fallbackFromUrl(shopUrl);
+        }
+        String productName = scraped.getName();
+        if (productNameCleaner.isWeakScrapedName(productName, shopUrl)) {
+            String slugName = productNameCleaner.nameFromUrlSlug(shopUrl);
+            if (slugName != null && !slugName.isBlank()) {
+                return slugName;
+            }
+            return productNameCleaner.fallbackFromUrl(shopUrl);
+        }
+        return productName;
+    }
+
+    @Transactional
     public void delete(Long id) {
         Video video = videoRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -336,6 +492,7 @@ public class VideoService {
         link.setType("product");
         link.setIsActive(Boolean.TRUE);
         link.setIsBroken(false);
+        link.setNeedsReview(false);
         link.setLastCheckedAt(Instant.now());
         link = linkRepository.save(link);
 
@@ -418,9 +575,6 @@ public class VideoService {
         }
         if (!isRecognizedTikTokVideoUrl(video.getTiktokUrl())) {
             reasons.add("Nieprawidłowy lub nierozpoznany link do wideo");
-        }
-        if (video.getId() != null && videoCategoryRepository.countByVideo_Id(video.getId()) == 0L) {
-            reasons.add("Brak przypisanej kategorii");
         }
         List<Product> products = relations.stream()
                 .map(VideoProduct::getProduct)

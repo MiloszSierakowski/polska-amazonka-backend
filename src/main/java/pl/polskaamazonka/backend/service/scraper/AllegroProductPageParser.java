@@ -3,6 +3,8 @@ package pl.polskaamazonka.backend.service.scraper;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
+
 @Component
 public class AllegroProductPageParser extends AbstractMetaProductPageParser {
 
@@ -47,5 +49,37 @@ public class AllegroProductPageParser extends AbstractMetaProductPageParser {
             imageUrl = data.getImageUrl();
         }
         return new ProductPageData(name, imageUrl);
+    }
+
+    public boolean isNotFoundPage(Document document) {
+        if (document == null) {
+            return true;
+        }
+        String title = metaPageDataExtractor.extractTitle(document);
+        if (title == null || title.isBlank()) {
+            title = document.title();
+        }
+        if (isErrorLikeTitle(title)) {
+            return true;
+        }
+        String body = document.text().toLowerCase(Locale.ROOT);
+        return body.contains("ups, nic tu nie ma")
+                || body.contains("ta strona nie istnieje")
+                || body.contains("mogliśmy ją usunąć lub przenieść");
+    }
+
+    private boolean isErrorLikeTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return false;
+        }
+        String lower = title.toLowerCase(Locale.ROOT);
+        return lower.contains("404")
+                || lower.contains("błąd 404")
+                || lower.contains("not found")
+                || lower.contains("nie znaleziono")
+                || lower.contains("nic tu nie ma")
+                || lower.contains("strona nie istnieje")
+                || lower.contains("niedostępny")
+                || lower.contains("unavailable");
     }
 }

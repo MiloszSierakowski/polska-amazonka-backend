@@ -37,6 +37,10 @@ public class Link {
     @Column(name = "is_broken", nullable = false)
     private Boolean isBroken;
 
+    @ColumnDefault("false")
+    @Column(name = "needs_review", nullable = false)
+    private Boolean needsReview;
+
     @Column(name = "last_checked_at")
     private Instant lastCheckedAt;
 
@@ -50,6 +54,9 @@ public class Link {
         }
         if (isBroken == null) {
             isBroken = Boolean.FALSE;
+        }
+        if (needsReview == null) {
+            needsReview = Boolean.FALSE;
         }
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.repository.LinkRepository;
+import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -74,6 +75,7 @@ public class LinkValidatorService {
     );
 
     private final LinkRepository linkRepository;
+    private final ProductPageScraperService productPageScraperService;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(CONNECT_TIMEOUT)
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -86,13 +88,30 @@ public class LinkValidatorService {
         for (Link link : links) {
             String url = link.getUrl();
             if (url == null || url.isBlank()) {
-                link.setIsBroken(true);
+                linkRepository.updateReviewFlags(link.getId(), true, false, checkedAt);
+            } else if ("product".equals(link.getType())) {
+                ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(url.trim());
+                if (availability == ProductLinkAvailability.UNCERTAIN) {
+                    linkRepository.updateReviewFlags(
+                            link.getId(),
+                            Boolean.TRUE.equals(link.getIsBroken()),
+                            true,
+                            checkedAt
+                    );
+                } else {
+                    linkRepository.updateReviewFlags(
+                            link.getId(),
+                            availability == ProductLinkAvailability.BROKEN,
+                            false,
+                            checkedAt
+                    );
+                }
             } else {
                 link.setIsBroken(isBroken(url.trim()));
+                link.setLastCheckedAt(checkedAt);
             }
-            link.setLastCheckedAt(checkedAt);
         }
-        linkRepository.saveAll(links);
+        linkRepository.saveAll(links.stream().filter(link -> !"product".equals(link.getType())).toList());
     }
 
     public boolean isBroken(String url) {

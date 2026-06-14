@@ -3,6 +3,8 @@ package pl.polskaamazonka.backend.controller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import pl.polskaamazonka.backend.dto.ProductDTO;
+import pl.polskaamazonka.backend.dto.ProductLinkFlagDTO;
+import pl.polskaamazonka.backend.dto.ProductLinkVerifyResultDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.service.VideoService;
 
@@ -57,6 +59,46 @@ public class VideoController {
     @PostMapping("/{videoId}/products/{productId}/resync")
     public VideoDTO resyncProduct(@PathVariable Long videoId, @PathVariable Long productId) {
         return videoService.resyncProduct(videoId, productId);
+    }
+
+    @PostMapping("/{videoId}/products/{productId}/verify-link")
+    public ProductLinkVerifyResultDTO verifyProductLink(
+            @PathVariable Long videoId,
+            @PathVariable Long productId
+    ) {
+        return videoService.verifyProductLink(videoId, productId);
+    }
+
+    @PostMapping("/{videoId}/products/{productId}/link-flag")
+    public void setProductLinkFlag(
+            @PathVariable Long videoId,
+            @PathVariable Long productId,
+            @RequestBody ProductLinkFlagDTO dto
+    ) {
+        if (dto.getIsBroken() == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Pole isBroken jest wymagane"
+            );
+        }
+        boolean needsReview = Boolean.TRUE.equals(dto.getNeedsReview());
+        videoService.setProductLinkFlag(videoId, productId, dto.getIsBroken(), needsReview);
+    }
+
+    @PostMapping("/{videoId}/products/{productId}/apply-store-title")
+    public VideoDTO applyStoreTitle(
+            @PathVariable Long videoId,
+            @PathVariable Long productId
+    ) {
+        return videoService.applyStoreTitleToProduct(videoId, productId);
+    }
+
+    @PostMapping("/{videoId}/products/{productId}/apply-store-image")
+    public VideoDTO applyStoreImage(
+            @PathVariable Long videoId,
+            @PathVariable Long productId
+    ) {
+        return videoService.applyStoreImageToProduct(videoId, productId);
     }
 
     @DeleteMapping("/{id}")
