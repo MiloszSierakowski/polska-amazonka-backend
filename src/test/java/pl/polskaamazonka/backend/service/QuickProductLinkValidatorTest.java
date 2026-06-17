@@ -10,21 +10,37 @@ import pl.polskaamazonka.backend.service.scraper.AliExpressUrlNormalizer;
 import pl.polskaamazonka.backend.service.scraper.AmazonUrlNormalizer;
 import pl.polskaamazonka.backend.service.scraper.TemuUrlNormalizer;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class QuickProductLinkValidatorTest {
 
+    private static final String TEMU_SHORT_URL = "https://share.temu.com/abc123";
+    private static final String TEMU_PRODUCT_URL = "https://www.temu.com/pl/nazwa-produktu-g-601099999999999.html";
+    private static final String ALIEXPRESS_SHORT_URL = "https://s.click.aliexpress.com/e/_c2x0Gp5j";
+    private static final String ALIEXPRESS_PRODUCT_URL = "https://pl.aliexpress.com/item/1005001234567890.html";
+
+    private FakeShortLinkRedirectClient shortLinkRedirectClient;
     private QuickProductLinkValidator validator;
 
     @BeforeEach
     void setUp() {
+        shortLinkRedirectClient = new FakeShortLinkRedirectClient();
+        AffiliateShortLinkResolver affiliateShortLinkResolver = new AffiliateShortLinkResolver(
+                shortLinkRedirectClient,
+                new AliExpressUrlNormalizer(),
+                new TemuUrlNormalizer()
+        );
         validator = new QuickProductLinkValidator(
                 new AllegroUrlNormalizer(),
                 new AliExpressUrlNormalizer(),
                 new TemuUrlNormalizer(),
-                new AmazonUrlNormalizer()
+                new AmazonUrlNormalizer(),
+                affiliateShortLinkResolver
         );
     }
 
@@ -258,5 +274,67 @@ class QuickProductLinkValidatorTest {
         QuickProductLinkValidationResult result = validator.validate("not-a-url");
 
         assertEquals(QuickProductLinkValidationStatus.INVALID_PRODUCT_URL, result.status());
+    }
+
+    @Test
+    void temuShortLinkAfterExpansionIsValid() {
+        shortLinkRedirectClient.expand(TEMU_SHORT_URL, TEMU_PRODUCT_URL);
+
+        QuickProductLinkValidationResult result = validator.validate(TEMU_SHORT_URL);
+
+        assertEquals(QuickProductLinkValidationStatus.VALID_PRODUCT_URL, result.status());
+        assertEquals(SupportedProductPlatform.TEMU, result.platform());
+        assertEquals(TEMU_SHORT_URL, result.originalUrl());
+        assertEquals(TEMU_PRODUCT_URL, result.normalizedUrl());
+        assertEquals("601099999999999", result.externalProductId());
+    }
+
+    @Test
+    void aliExpressShortLinkAfterExpansionIsValid() {
+        shortLinkRedirectClient.expand(ALIEXPRESS_SHORT_URL, ALIEXPRESS_PRODUCT_URL);
+
+        QuickProductLinkValidationResult result = validator.validate(ALIEXPRESS_SHORT_URL);
+
+        assertEquals(QuickProductLinkValidationStatus.VALID_PRODUCT_URL, result.status());
+        assertEquals(SupportedProductPlatform.ALIEXPRESS, result.platform());
+        assertEquals(ALIEXPRESS_SHORT_URL, result.originalUrl());
+        assertEquals(ALIEXPRESS_PRODUCT_URL, result.normalizedUrl());
+        assertEquals("1005001234567890", result.externalProductId());
+    }
+
+    @Test
+    void shortLinkExpansionFailureIsInvalidWithReadableReason() {
+        shortLinkRedirectClient.fail(TEMU_SHORT_URL, HttpShortLinkRedirectClient.EXPANSION_FAILED_MESSAGE);
+
+        QuickProductLinkValidationResult result = validator.validate(TEMU_SHORT_URL);
+
+        assertEquals(QuickProductLinkValidationStatus.INVALID_PRODUCT_URL, result.status());
+        assertEquals(SupportedProductPlatform.TEMU, result.platform());
+        assertEquals(HttpShortLinkRedirectClient.EXPANSION_FAILED_MESSAGE, result.reason());
+    }
+
+    private static class FakeShortLinkRedirectClient implements ShortLinkRedirectClient {
+        private final Map<String, String> expansions = new HashMap<>();
+        private final Map<String, String> failures = new HashMap<>();
+
+        void expand(String originalUrl, String expandedUrl) {
+            expansions.put(originalUrl, expandedUrl);
+        }
+
+        void fail(String originalUrl, String reason) {
+            failures.put(originalUrl, reason);
+        }
+
+        @Override
+        public String expand(String url) {
+            if (failures.containsKey(url)) {
+                throw new ShortLinkExpansionException(failures.get(url));
+            }
+            String expandedUrl = expansions.get(url);
+            if (expandedUrl == null) {
+                throw new ShortLinkExpansionException(HttpShortLinkRedirectClient.EXPANSION_FAILED_MESSAGE);
+            }
+            return expandedUrl;
+        }
     }
 }

@@ -70,6 +70,9 @@ public class ProductLinkRedirectValidator {
         if (sameProductByPlatformId(originalUrl, effectiveUrl)) {
             return false;
         }
+        if (isShortLinkExpandedToProduct(originalUrl, effectiveUrl)) {
+            return false;
+        }
         if (isHomepageOnly(effectiveUrl)) {
             return true;
         }
@@ -81,9 +84,6 @@ public class ProductLinkRedirectValidator {
         }
         if (lostPlatformProductIdentifier(originalUrl, effectiveUrl)) {
             return true;
-        }
-        if (isShortLinkExpandedToProduct(originalUrl, effectiveUrl)) {
-            return false;
         }
         return hasDifferentProductPath(originalUrl, effectiveUrl);
     }
@@ -247,7 +247,10 @@ public class ProductLinkRedirectValidator {
         return host.equals("amzn.to")
                 || host.endsWith(".amzn.to")
                 || host.equals("temu.to")
-                || host.endsWith(".temu.to");
+                || host.endsWith(".temu.to")
+                || host.equals("share.temu.com")
+                || host.equals("s.click.aliexpress.com")
+                || host.equals("star.aliexpress.com");
     }
 
     private boolean isAliExpressUrl(String url) {

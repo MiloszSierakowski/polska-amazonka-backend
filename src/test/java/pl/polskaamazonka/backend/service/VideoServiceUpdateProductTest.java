@@ -93,7 +93,14 @@ class VideoServiceUpdateProductTest {
             new AllegroUrlNormalizer(),
             new AliExpressUrlNormalizer(),
             new TemuUrlNormalizer(),
-            new AmazonUrlNormalizer()
+            new AmazonUrlNormalizer(),
+            new AffiliateShortLinkResolver(
+                    url -> {
+                        throw new AssertionError("Short link resolver should not be called for full product URLs.");
+                    },
+                    new AliExpressUrlNormalizer(),
+                    new TemuUrlNormalizer()
+            )
     );
 
     @InjectMocks
