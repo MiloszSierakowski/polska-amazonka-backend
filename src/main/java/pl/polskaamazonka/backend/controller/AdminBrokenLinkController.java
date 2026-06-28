@@ -18,6 +18,6 @@ public class AdminBrokenLinkController {
 
     @GetMapping
     public List<BrokenLinkProductDTO> getAll() {
-        return brokenLinkService.getBrokenProductLinks();
+        return brokenLinkService.getLinksNeedingReview();
     }
 }

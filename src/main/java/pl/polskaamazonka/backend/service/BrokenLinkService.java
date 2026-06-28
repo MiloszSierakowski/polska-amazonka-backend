@@ -26,12 +26,6 @@ public class BrokenLinkService {
                 .toList();
     }
 
-    /** @deprecated use {@link #getLinksNeedingReview()} */
-    @Transactional(readOnly = true)
-    public List<BrokenLinkProductDTO> getBrokenProductLinks() {
-        return getLinksNeedingReview();
-    }
-
     private Comparator<VideoProduct> reviewListComparator() {
         return Comparator
                 .comparing((VideoProduct relation) -> !Boolean.TRUE.equals(

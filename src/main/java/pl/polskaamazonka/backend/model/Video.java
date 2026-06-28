@@ -40,6 +40,12 @@ public class Video {
     @Column(name = "created_at")
     private Instant createdAt;
 
+    @Column(name = "promotion_start_at")
+    private Instant promotionStartAt;
+
+    @Column(name = "promotion_end_at")
+    private Instant promotionEndAt;
+
     @OneToMany(mappedBy = "video", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<VideoProduct> videoProducts;
 

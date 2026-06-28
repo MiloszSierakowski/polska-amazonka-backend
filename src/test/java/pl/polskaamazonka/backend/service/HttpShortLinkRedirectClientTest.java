@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentMatchers;
 
 class HttpShortLinkRedirectClientTest {
 
@@ -32,7 +33,7 @@ class HttpShortLinkRedirectClientTest {
     void followsHeadRedirect() throws Exception {
         HttpResponse<Void> redirect = response(302, "https://www.temu.com/pl/nazwa-g-601099999999999.html");
         HttpResponse<Void> ok = response(200, null);
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+        when(httpClient.send(any(HttpRequest.class), ArgumentMatchers.<HttpResponse.BodyHandler<Void>>any()))
                 .thenReturn(redirect)
                 .thenReturn(ok);
 
@@ -46,7 +47,7 @@ class HttpShortLinkRedirectClientTest {
         HttpResponse<Void> methodNotAllowed = response(405, null);
         HttpResponse<Void> redirect = response(302, "https://pl.aliexpress.com/item/1005001234567890.html");
         HttpResponse<Void> ok = response(200, null);
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+        when(httpClient.send(any(HttpRequest.class), ArgumentMatchers.<HttpResponse.BodyHandler<Void>>any()))
                 .thenReturn(methodNotAllowed)
                 .thenReturn(redirect)
                 .thenReturn(ok);
@@ -62,7 +63,7 @@ class HttpShortLinkRedirectClientTest {
         HttpResponse<Void> second = response(302, "https://share.temu.com/2");
         HttpResponse<Void> third = response(302, "https://share.temu.com/3");
         HttpResponse<Void> fourth = response(302, "https://www.temu.com/pl/nazwa-g-601099999999999.html");
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+        when(httpClient.send(any(HttpRequest.class), ArgumentMatchers.<HttpResponse.BodyHandler<Void>>any()))
                 .thenReturn(first)
                 .thenReturn(second)
                 .thenReturn(third)
@@ -78,7 +79,7 @@ class HttpShortLinkRedirectClientTest {
 
     @Test
     void networkErrorFailsWithoutRetry() throws Exception {
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+        when(httpClient.send(any(HttpRequest.class), ArgumentMatchers.<HttpResponse.BodyHandler<Void>>any()))
                 .thenThrow(new IOException("timeout"));
 
         ShortLinkExpansionException exception = assertThrows(

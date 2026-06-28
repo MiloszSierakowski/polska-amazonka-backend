@@ -9,4 +9,5 @@ public class ProductDTO {
     private String imageUrl;
     private Long productLinkId;
     private LinkDTO productLink;
+    private String promoCode;
 }

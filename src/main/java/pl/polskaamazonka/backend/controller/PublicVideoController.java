@@ -18,6 +18,11 @@ public class PublicVideoController {
 
     private final VideoService videoService;
 
+    @GetMapping("/promoted")
+    public List<VideoDTO> getPromoted() {
+        return videoService.getAllPromotedPublic();
+    }
+
     @GetMapping
     public List<VideoDTO> getAll(@RequestParam(required = false) Long categoryId) {
         return videoService.getAllPublic(categoryId);

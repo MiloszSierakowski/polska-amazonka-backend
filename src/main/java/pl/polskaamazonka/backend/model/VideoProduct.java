@@ -25,4 +25,7 @@ public class VideoProduct {
     @OnDelete(action = OnDeleteAction.CASCADE)
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
+
+    @Column(name = "promo_code", length = 255)
+    private String promoCode;
 }

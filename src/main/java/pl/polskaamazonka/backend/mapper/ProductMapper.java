@@ -2,6 +2,7 @@ package pl.polskaamazonka.backend.mapper;
 
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.model.Product;
+import pl.polskaamazonka.backend.model.VideoProduct;
 
 public class ProductMapper {
 
@@ -16,6 +17,16 @@ public class ProductMapper {
                 product.getProductLink() != null ? product.getProductLink().getId() : null
         );
         dto.setProductLink(LinkMapper.toDTO(product.getProductLink()));
+        return dto;
+    }
+
+    public static ProductDTO toDTO(VideoProduct videoProduct) {
+        if (videoProduct == null) return null;
+
+        ProductDTO dto = toDTO(videoProduct.getProduct());
+        if (dto != null) {
+            dto.setPromoCode(videoProduct.getPromoCode());
+        }
         return dto;
     }
 }

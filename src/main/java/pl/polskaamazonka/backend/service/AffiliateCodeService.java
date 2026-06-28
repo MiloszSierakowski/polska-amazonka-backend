@@ -21,11 +21,4 @@ public class AffiliateCodeService {
                 AffiliateCodeType.AFFILIATE
         );
     }
-
-    public Optional<AffiliateCode> getActiveDiscountCode(Shop shop) {
-        return repository.findFirstByShopAndTypeAndIsActiveTrue(
-                shop,
-                AffiliateCodeType.DISCOUNT
-        );
-    }
 }

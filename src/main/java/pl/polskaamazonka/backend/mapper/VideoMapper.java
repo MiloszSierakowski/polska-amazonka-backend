@@ -15,6 +15,8 @@ public class VideoMapper {
         dto.setPreviewImageUrl(video.getPreviewImageUrl());
         dto.setTitle(video.getTitle());
         dto.setIsActive(video.getIsActive());
+        dto.setPromotionStartAt(video.getPromotionStartAt());
+        dto.setPromotionEndAt(video.getPromotionEndAt());
         dto.setProducts(
                 video.getVideoProducts() == null
                         ? java.util.List.of()

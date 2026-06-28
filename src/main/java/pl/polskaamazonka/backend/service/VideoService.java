@@ -87,11 +87,23 @@ public class VideoService {
 
     @Transactional
     public List<VideoDTO> getAllPublic(Long categoryId) {
+        Instant now = Instant.now();
         List<Video> videos = categoryId == null
                 ? videoRepository.findAllByOrderByCreatedAtDesc()
                 : videoRepository.findAllByCategoryId(categoryId);
         return videos.stream()
-                .map(this::toPublicDtoWithProducts)
+                .filter(video -> !isPromotionActive(video, now))
+                .map(video -> toPublicDtoWithProducts(video, false))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    @Transactional
+    public List<VideoDTO> getAllPromotedPublic() {
+        Instant now = Instant.now();
+        return videoRepository.findAllActivePromoted(now).stream()
+                .filter(video -> isPromotionActive(video, now))
+                .map(video -> toPublicDtoWithProducts(video, true))
                 .filter(Objects::nonNull)
                 .toList();
     }
@@ -103,7 +115,7 @@ public class VideoService {
         if (video == null) {
             return null;
         }
-        return toPublicDtoWithProducts(video);
+        return toPublicDtoWithProducts(video, false);
     }
 
     @Transactional
@@ -121,11 +133,13 @@ public class VideoService {
         if (dto.getTiktokUrl() == null || dto.getTiktokUrl().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        validatePromotionDates(dto.getPromotionStartAt(), dto.getPromotionEndAt());
         Video video = new Video();
         video.setTiktokUrl(dto.getTiktokUrl());
         video.setLocalMp4Url(dto.getLocalMp4Url());
         video.setTitle(dto.getTitle());
         video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        applyPromotionDates(video, dto);
         video.setCreatedAt(Instant.now());
         Video saved = videoRepository.save(video);
         saved.setPreviewImageUrl(resolveAndPersistPreview(saved));
@@ -135,6 +149,7 @@ public class VideoService {
                 attachProduct(saved, productDto);
             }
         }
+        validatePromotionProductPresence(saved);
         String title = saved.getTitle() != null && !saved.getTitle().isBlank() ? saved.getTitle() : "-";
         activityLogService.logAction("UTWORZENIE_FILMU", "Dodano film o tytule: " + title + " (ID: " + saved.getId() + ")");
         return getById(saved.getId());
@@ -147,17 +162,20 @@ public class VideoService {
         if (dto.getTiktokUrl() == null || dto.getTiktokUrl().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        validatePromotionDates(dto.getPromotionStartAt(), dto.getPromotionEndAt());
         boolean tiktokChanged = !Objects.equals(video.getTiktokUrl(), dto.getTiktokUrl());
         String previousPreview = video.getPreviewImageUrl();
         video.setTitle(dto.getTitle());
         video.setTiktokUrl(dto.getTiktokUrl());
         video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        applyPromotionDates(video, dto);
         if (dto.getLocalMp4Url() != null) {
             video.setLocalMp4Url(dto.getLocalMp4Url());
         }
         if (tiktokChanged) {
             video.setPreviewImageUrl(null);
         }
+        validatePromotionProductPresence(video);
         videoRepository.save(video);
         if (tiktokChanged) {
             resolveAndPersistPreview(video);
@@ -177,6 +195,7 @@ public class VideoService {
         Video video = videoRepository.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         attachProduct(video, dto);
+        validatePromotionProductPresence(video);
         return getById(videoId);
     }
 
@@ -221,15 +240,18 @@ public class VideoService {
                 product.setImageUrl(dto.getImageUrl().trim());
             }
         }
+        relation.setPromoCode(normalizePromoCode(dto.getPromoCode()));
         linkRepository.save(link);
         productRepository.save(product);
+        videoProductRepository.save(relation);
+        validatePromotionProductPresence(relation.getVideo());
         activityLogService.logAction("EDYCJA_PRODUKTU", "Zaktualizowano produkt o ID: " + productId + " (Nowy URL: " + shopUrl + ")");
         return getById(videoId);
     }
 
     @Transactional
     public VideoDTO detachProduct(Long videoId, Long productId) {
-        videoRepository.findById(videoId)
+        Video video = videoRepository.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         VideoProduct relation = videoProductRepository.findByVideo_IdAndProduct_Id(videoId, productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -247,6 +269,7 @@ public class VideoService {
 
         videoProductRepository.delete(relation);
         videoProductRepository.flush();
+        validatePromotionProductPresence(video);
 
         if (usageCount <= 1L && product != null && product.getId() != null) {
             productRepository.delete(product);
@@ -337,10 +360,16 @@ public class VideoService {
 
     @Transactional
     public void setProductLinkFlag(Long videoId, Long productId, boolean isBroken, boolean needsReview) {
+        Video video = videoRepository.findById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         Product product = loadProductForVideo(videoId, productId);
         Link link = requireProductLink(product);
         Instant checkedAt = Instant.now();
         linkRepository.updateReviewFlags(link.getId(), isBroken, needsReview, checkedAt);
+        link.setIsBroken(isBroken);
+        link.setNeedsReview(needsReview);
+        link.setLastCheckedAt(checkedAt);
+        validatePromotionProductPresence(video);
         String statusLabel = needsReview ? "wymaga sprawdzenia" : (isBroken ? "niesprawny" : "sprawny");
         activityLogService.logAction(
                 "RECZNA_FLAGA_LINKU",
@@ -539,6 +568,7 @@ public class VideoService {
         VideoProduct videoProduct = new VideoProduct();
         videoProduct.setVideo(video);
         videoProduct.setProduct(product);
+        videoProduct.setPromoCode(normalizePromoCode(dto.getPromoCode()));
         videoProductRepository.save(videoProduct);
         activityLogService.logAction("UTWORZENIE_PRODUKTU", "Dodano produkt o ID: " + product.getId() + " do filmu o ID: " + video.getId() + " (Nazwa: " + productName + ", URL: " + shopUrl + ")");
     }
@@ -580,23 +610,28 @@ public class VideoService {
         dto.setPreviewImageUrl(resolveAndPersistPreview(video));
         List<VideoProduct> relations = videoProductRepository.findByVideo_Id(video.getId());
         dto.setProducts(relations.stream()
-                .map(vp -> ProductMapper.toDTO(vp.getProduct()))
+                .map(ProductMapper::toDTO)
                 .toList());
         dto.setBlockReasons(resolveBlockReasons(video, relations));
         return dto;
     }
 
-    private VideoDTO toPublicDtoWithProducts(Video video) {
+    private VideoDTO toPublicDtoWithProducts(Video video, boolean includePromoCodes) {
         if (!Boolean.TRUE.equals(video.getIsActive())) {
             return null;
         }
         VideoDTO dto = VideoMapper.toDTO(video);
+        if (!includePromoCodes) {
+            dto.setPromotionStartAt(null);
+            dto.setPromotionEndAt(null);
+        }
         dto.setPreviewImageUrl(resolveAndPersistPreview(video));
         List<ProductDTO> products = videoProductRepository.findByVideo_Id(video.getId()).stream()
-                .map(VideoProduct::getProduct)
-                .filter(Objects::nonNull)
-                .filter(this::hasWorkingLink)
-                .map(ProductMapper::toDTO)
+                .filter(videoProduct -> videoProduct.getProduct() != null)
+                .filter(videoProduct -> hasWorkingLink(videoProduct.getProduct()))
+                .map(videoProduct -> includePromoCodes
+                        ? ProductMapper.toDTO(videoProduct)
+                        : ProductMapper.toDTO(videoProduct.getProduct()))
                 .toList();
         if (products.isEmpty()) {
             return null;
@@ -611,6 +646,71 @@ public class VideoService {
             return false;
         }
         return !Boolean.TRUE.equals(link.getIsBroken());
+    }
+
+    private boolean isPromotionActive(Video video, Instant now) {
+        if (video == null
+                || video.getPromotionStartAt() == null
+                || video.getPromotionEndAt() == null
+                || now == null) {
+            return false;
+        }
+        return !video.getPromotionStartAt().isAfter(now)
+                && video.getPromotionEndAt().isAfter(now);
+    }
+
+    private void validatePromotionDates(Instant promotionStartAt, Instant promotionEndAt) {
+        if (promotionStartAt == null && promotionEndAt == null) {
+            return;
+        }
+        if (promotionStartAt == null || promotionEndAt == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Data rozpoczęcia i zakończenia promocji muszą być ustawione razem."
+            );
+        }
+        if (!promotionStartAt.isBefore(promotionEndAt)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Data zakończenia promocji musi być późniejsza niż data rozpoczęcia."
+            );
+        }
+    }
+
+    private void applyPromotionDates(Video video, VideoDTO dto) {
+        video.setPromotionStartAt(dto.getPromotionStartAt());
+        video.setPromotionEndAt(dto.getPromotionEndAt());
+    }
+
+    private void validatePromotionProductPresence(Video video) {
+        if (!hasPromotionDates(video)) {
+            return;
+        }
+        List<VideoProduct> relations = videoProductRepository.findByVideo_Id(video.getId());
+        boolean hasWorkingProduct = relations.stream()
+                .map(VideoProduct::getProduct)
+                .filter(Objects::nonNull)
+                .anyMatch(this::hasWorkingLink);
+        if (!hasWorkingProduct) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Film promowany musi mieć co najmniej jeden działający produkt."
+            );
+        }
+    }
+
+    private boolean hasPromotionDates(Video video) {
+        return video != null
+                && video.getPromotionStartAt() != null
+                && video.getPromotionEndAt() != null;
+    }
+
+    private String normalizePromoCode(String promoCode) {
+        if (promoCode == null) {
+            return null;
+        }
+        String trimmed = promoCode.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private List<String> resolveBlockReasons(Video video, List<VideoProduct> relations) {
