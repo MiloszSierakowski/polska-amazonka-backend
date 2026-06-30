@@ -23,6 +23,8 @@ public class ProductRedirectService {
     private final AffiliateCodeService affiliateCodeService;
     private final ProductPageParserFactory productPageParserFactory;
     private final AffiliateUrlBuilder affiliateUrlBuilder;
+    private final AffiliateTrackingDetector affiliateTrackingDetector;
+    private final AffiliateShortLinkResolver affiliateShortLinkResolver;
     private final ShopRepository shopRepository;
 
     @Transactional(readOnly = true)
@@ -35,23 +37,28 @@ public class ProductRedirectService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
-        String originalUrl = productLink.getUrl().trim();
-        Optional<Shop> shop = resolveShop(originalUrl);
+        String storedUrl = productLink.getUrl().trim();
+        if (affiliateShortLinkResolver.isWhitelistedShortLink(storedUrl)
+                || affiliateTrackingDetector.hasExistingAffiliateTracking(storedUrl)) {
+            return storedUrl;
+        }
+
+        Optional<Shop> shop = resolveShop(storedUrl);
         if (shop.isEmpty()) {
-            return originalUrl;
+            return storedUrl;
         }
 
         Optional<AffiliateCode> affiliateCode = affiliateCodeService.getActiveAffiliateCode(shop.get());
         if (affiliateCode.isEmpty()) {
-            return originalUrl;
+            return storedUrl;
         }
 
         String codeValue = affiliateCode.get().getCodeValue();
         if (codeValue == null || codeValue.isBlank()) {
-            return originalUrl;
+            return storedUrl;
         }
 
-        return affiliateUrlBuilder.apply(originalUrl, codeValue, shop.get());
+        return affiliateUrlBuilder.apply(storedUrl, codeValue, shop.get());
     }
 
     private Optional<Shop> resolveShop(String productUrl) {

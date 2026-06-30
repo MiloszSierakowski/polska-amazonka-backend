@@ -88,12 +88,6 @@ class VideoServicePromotionTest {
     private ProductImageStorageService productImageStorageService;
     @Mock
     private ProductNameCleaner productNameCleaner;
-    @Spy
-    private AllegroUrlNormalizer allegroUrlNormalizer = new AllegroUrlNormalizer();
-    @Spy
-    private TemuUrlNormalizer temuUrlNormalizer = new TemuUrlNormalizer();
-    @Spy
-    private AmazonUrlNormalizer amazonUrlNormalizer = new AmazonUrlNormalizer();
     @Mock
     private ActivityLogService activityLogService;
     @Spy
@@ -109,6 +103,14 @@ class VideoServicePromotionTest {
                     new AliExpressUrlNormalizer(),
                     new TemuUrlNormalizer()
             )
+    );
+
+    @Spy
+    private ProductLinkUrlSupport productLinkUrlSupport = new ProductLinkUrlSupport(
+            quickProductLinkValidator,
+            new AllegroUrlNormalizer(),
+            new TemuUrlNormalizer(),
+            new AmazonUrlNormalizer()
     );
 
     @InjectMocks

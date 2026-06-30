@@ -17,13 +17,9 @@ import pl.polskaamazonka.backend.config.UploadPaths;
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.ProductLinkVerifyResultDTO;
 import pl.polskaamazonka.backend.dto.QuickProductLinkValidationResult;
-import pl.polskaamazonka.backend.dto.QuickProductLinkValidationStatus;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
-import pl.polskaamazonka.backend.service.scraper.AllegroUrlNormalizer;
-import pl.polskaamazonka.backend.service.scraper.AmazonUrlNormalizer;
-import pl.polskaamazonka.backend.service.scraper.TemuUrlNormalizer;
 import pl.polskaamazonka.backend.service.scraper.ProductNameCleaner;
 import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
 import pl.polskaamazonka.backend.service.scraper.ProductPageData;
@@ -53,11 +49,6 @@ public class VideoService {
 
     private static final Pattern TIKTOK_VIDEO_ID_PATTERN = Pattern.compile("/video/(\\d+)");
 
-    private static final String INVALID_PRODUCT_URL_MESSAGE =
-            "Link nie wygląda jak bezpośrednia karta produktu. Wklej link do konkretnego produktu.";
-    private static final String UNSUPPORTED_PLATFORM_MESSAGE =
-            "Nieobsługiwana platforma. Obsługiwane platformy: Allegro, AliExpress, Temu, Amazon.";
-
     private final VideoRepository videoRepository;
     private final ProductRepository productRepository;
     private final VideoProductRepository videoProductRepository;
@@ -69,11 +60,8 @@ public class VideoService {
     private final VideoThumbnailStorageService videoThumbnailStorageService;
     private final ProductImageStorageService productImageStorageService;
     private final ProductNameCleaner productNameCleaner;
-    private final AllegroUrlNormalizer allegroUrlNormalizer;
-    private final TemuUrlNormalizer temuUrlNormalizer;
-    private final AmazonUrlNormalizer amazonUrlNormalizer;
     private final ActivityLogService activityLogService;
-    private final QuickProductLinkValidator quickProductLinkValidator;
+    private final ProductLinkUrlSupport productLinkUrlSupport;
 
     @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
@@ -218,20 +206,19 @@ public class VideoService {
         if (rawShopUrl == null || rawShopUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        String candidateUrl = normalizeShopUrl(rawShopUrl.trim());
-        boolean urlChanged = !isSameShopUrl(previousUrl, candidateUrl);
-        String shopUrl = candidateUrl;
+        String trimmedRawUrl = rawShopUrl.trim();
+        boolean urlChanged = previousUrl == null || !previousUrl.equals(trimmedRawUrl);
         if (urlChanged) {
-            shopUrl = requireValidProductShopUrl(rawShopUrl.trim());
+            QuickProductLinkValidationResult validation = productLinkUrlSupport.validateProductUrl(trimmedRawUrl);
+            String storedUrl = productLinkUrlSupport.storedUrl(validation);
+            String verificationUrl = productLinkUrlSupport.verificationUrl(validation);
             Instant checkedAt = Instant.now();
             link.setIsBroken(false);
             link.setNeedsReview(true);
             link.setLastCheckedAt(checkedAt);
             linkRepository.updateReviewFlags(link.getId(), false, true, checkedAt);
-        }
-        link.setUrl(shopUrl);
-        if (urlChanged) {
-            applyProductMetadataAfterUrlChange(product, dto, shopUrl);
+            link.setUrl(storedUrl);
+            applyProductMetadataAfterUrlChange(product, dto, verificationUrl);
         } else {
             if (dto.getName() != null && !dto.getName().isBlank()) {
                 product.setName(dto.getName().trim());
@@ -245,7 +232,10 @@ public class VideoService {
         productRepository.save(product);
         videoProductRepository.save(relation);
         validatePromotionProductPresence(relation.getVideo());
-        activityLogService.logAction("EDYCJA_PRODUKTU", "Zaktualizowano produkt o ID: " + productId + " (Nowy URL: " + shopUrl + ")");
+        activityLogService.logAction(
+                "EDYCJA_PRODUKTU",
+                "Zaktualizowano produkt o ID: " + productId + " (Nowy URL: " + link.getUrl() + ")"
+        );
         return getById(videoId);
     }
 
@@ -295,22 +285,23 @@ public class VideoService {
         if (product == null || product.getProductLink() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        String shopUrl = product.getProductLink().getUrl();
-        if (shopUrl == null || shopUrl.isBlank()) {
+        String storedUrl = product.getProductLink().getUrl();
+        if (storedUrl == null || storedUrl.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        String verificationUrl = productLinkUrlSupport.verificationUrlForStored(storedUrl);
         String previousImageUrl = product.getImageUrl();
-        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        ProductPageData scraped = productPageScraperService.scrape(verificationUrl);
         String productName = scraped.getName();
-        if (productNameCleaner.isWeakScrapedName(productName, shopUrl)) {
-            String slugName = productNameCleaner.nameFromUrlSlug(shopUrl);
+        if (productNameCleaner.isWeakScrapedName(productName, verificationUrl)) {
+            String slugName = productNameCleaner.nameFromUrlSlug(verificationUrl);
             if (slugName != null && !slugName.isBlank()) {
                 productName = slugName;
             } else {
-                productName = productNameCleaner.fallbackFromUrl(shopUrl);
+                productName = productNameCleaner.fallbackFromUrl(verificationUrl);
             }
         }
-        String imageUrl = persistProductImage(scraped.getImageUrl(), shopUrl);
+        String imageUrl = persistProductImage(scraped.getImageUrl(), verificationUrl);
         product.setName(productName);
         product.setImageUrl(imageUrl);
         productRepository.save(product);
@@ -328,11 +319,12 @@ public class VideoService {
     public ProductLinkVerifyResultDTO verifyProductLink(Long videoId, Long productId) {
         Product product = loadProductForVideo(videoId, productId);
         Link link = requireProductLink(product);
-        String shopUrl = link.getUrl().trim();
-        ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(shopUrl);
+        String storedUrl = link.getUrl().trim();
+        String verificationUrl = productLinkUrlSupport.verificationUrlForStored(storedUrl);
+        ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(verificationUrl);
         persistLinkAvailability(link, availability);
 
-        ProductPageData scraped = scrapeSafely(shopUrl);
+        ProductPageData scraped = scrapeSafely(verificationUrl);
         Link refreshedLink = linkRepository.findById(link.getId()).orElse(link);
         ProductLinkVerifyResultDTO result = new ProductLinkVerifyResultDTO();
         result.setVideoId(videoId);
@@ -343,7 +335,7 @@ public class VideoService {
         result.setLinkWorking(availability == ProductLinkAvailability.WORKING);
         result.setCurrentTitle(product.getName());
         result.setCurrentImageUrl(product.getImageUrl());
-        result.setStoreTitle(resolveScrapedProductName(scraped, shopUrl));
+        result.setStoreTitle(resolveScrapedProductName(scraped, verificationUrl));
         result.setStoreImageUrl(scraped != null ? scraped.getImageUrl() : null);
         String availabilityLabel = switch (availability) {
             case WORKING -> "sprawny";
@@ -407,9 +399,9 @@ public class VideoService {
     public VideoDTO applyStoreTitleToProduct(Long videoId, Long productId) {
         Product product = loadProductForVideo(videoId, productId);
         Link link = requireProductLink(product);
-        String shopUrl = link.getUrl().trim();
-        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
-        String productName = resolveScrapedProductName(scraped, shopUrl);
+        String verificationUrl = productLinkUrlSupport.verificationUrlForStored(link.getUrl().trim());
+        ProductPageData scraped = productPageScraperService.scrape(verificationUrl);
+        String productName = resolveScrapedProductName(scraped, verificationUrl);
         product.setName(productName);
         productRepository.save(product);
         activityLogService.logAction(
@@ -423,10 +415,10 @@ public class VideoService {
     public VideoDTO applyStoreImageToProduct(Long videoId, Long productId) {
         Product product = loadProductForVideo(videoId, productId);
         Link link = requireProductLink(product);
-        String shopUrl = link.getUrl().trim();
-        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        String verificationUrl = productLinkUrlSupport.verificationUrlForStored(link.getUrl().trim());
+        ProductPageData scraped = productPageScraperService.scrape(verificationUrl);
         String previousImageUrl = product.getImageUrl();
-        String imageUrl = persistProductImage(scraped != null ? scraped.getImageUrl() : null, shopUrl);
+        String imageUrl = persistProductImage(scraped != null ? scraped.getImageUrl() : null, verificationUrl);
         product.setImageUrl(imageUrl);
         productRepository.save(product);
         if (previousImageUrl != null
@@ -534,10 +526,12 @@ public class VideoService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
-        String shopUrl = requireValidProductShopUrl(resolveShopUrl(dto));
+        QuickProductLinkValidationResult validation = productLinkUrlSupport.validateProductUrl(resolveShopUrl(dto));
+        String storedUrl = productLinkUrlSupport.storedUrl(validation);
+        String verificationUrl = productLinkUrlSupport.verificationUrl(validation);
 
         Link link = new Link();
-        link.setUrl(shopUrl);
+        link.setUrl(storedUrl);
         link.setType("product");
         link.setIsActive(Boolean.TRUE);
         link.setIsBroken(false);
@@ -545,10 +539,10 @@ public class VideoService {
         link.setLastCheckedAt(Instant.now());
         link = linkRepository.save(link);
 
-        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        ProductPageData scraped = productPageScraperService.scrape(verificationUrl);
         String productName;
         if (dto.getName() != null && !dto.getName().isBlank()) {
-            productName = productPageScraperService.resolveProductName(shopUrl, dto.getName());
+            productName = productPageScraperService.resolveProductName(verificationUrl, dto.getName());
         } else {
             productName = scraped.getName();
         }
@@ -557,7 +551,7 @@ public class VideoService {
         if (imageUrl == null || imageUrl.isBlank()) {
             imageUrl = scraped.getImageUrl();
         }
-        imageUrl = persistProductImage(imageUrl, shopUrl);
+        imageUrl = persistProductImage(imageUrl, verificationUrl);
 
         Product product = new Product();
         product.setName(productName);
@@ -570,7 +564,7 @@ public class VideoService {
         videoProduct.setProduct(product);
         videoProduct.setPromoCode(normalizePromoCode(dto.getPromoCode()));
         videoProductRepository.save(videoProduct);
-        activityLogService.logAction("UTWORZENIE_PRODUKTU", "Dodano produkt o ID: " + product.getId() + " do filmu o ID: " + video.getId() + " (Nazwa: " + productName + ", URL: " + shopUrl + ")");
+        activityLogService.logAction("UTWORZENIE_PRODUKTU", "Dodano produkt o ID: " + product.getId() + " do filmu o ID: " + video.getId() + " (Nazwa: " + productName + ", URL: " + storedUrl + ")");
     }
 
     private String resolveShopUrl(ProductDTO dto) {
@@ -578,31 +572,6 @@ public class VideoService {
             return dto.getProductLink().getUrl();
         }
         return null;
-    }
-
-    private String requireValidProductShopUrl(String rawUrl) {
-        if (rawUrl == null || rawUrl.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adres URL produktu jest wymagany.");
-        }
-        QuickProductLinkValidationResult validation = quickProductLinkValidator.validate(rawUrl.trim());
-        if (validation.status() != QuickProductLinkValidationStatus.VALID_PRODUCT_URL) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, validationErrorMessage(validation));
-        }
-        String normalizedUrl = validation.normalizedUrl();
-        if (normalizedUrl == null || normalizedUrl.isBlank()) {
-            return normalizeShopUrl(rawUrl.trim());
-        }
-        return normalizedUrl;
-    }
-
-    private String validationErrorMessage(QuickProductLinkValidationResult validation) {
-        if (validation.status() == QuickProductLinkValidationStatus.UNSUPPORTED_PLATFORM) {
-            return UNSUPPORTED_PLATFORM_MESSAGE;
-        }
-        if (validation.reason() != null && !validation.reason().isBlank()) {
-            return validation.reason();
-        }
-        return INVALID_PRODUCT_URL_MESSAGE;
     }
 
     private VideoDTO toDtoWithProducts(Video video) {
@@ -803,39 +772,16 @@ public class VideoService {
         }
     }
 
-    private String normalizeShopUrl(String shopUrl) {
-        if (shopUrl == null || shopUrl.isBlank()) {
-            return shopUrl;
-        }
-        if (allegroUrlNormalizer.isAllegroUrl(shopUrl)) {
-            return allegroUrlNormalizer.normalize(shopUrl);
-        }
-        if (temuUrlNormalizer.isTemuUrl(shopUrl)) {
-            return temuUrlNormalizer.normalize(shopUrl);
-        }
-        if (amazonUrlNormalizer.isAmazonUrl(shopUrl)) {
-            return amazonUrlNormalizer.normalize(shopUrl);
-        }
-        return shopUrl.trim();
-    }
-
-    private boolean isSameShopUrl(String left, String right) {
-        if (left == null || left.isBlank() || right == null || right.isBlank()) {
-            return Objects.equals(left, right);
-        }
-        return Objects.equals(normalizeShopUrl(left), normalizeShopUrl(right));
-    }
-
-    private void applyProductMetadataAfterUrlChange(Product product, ProductDTO dto, String shopUrl) {
+    private void applyProductMetadataAfterUrlChange(Product product, ProductDTO dto, String verificationUrl) {
         String previousImageUrl = product.getImageUrl();
         boolean nameExplicitlyUpdated = isExplicitNameUpdate(dto, product);
         boolean imageExplicitlyUpdated = isExplicitImageUpdate(dto, product);
 
         if (nameExplicitlyUpdated) {
-            product.setName(productPageScraperService.resolveProductName(shopUrl, dto.getName().trim()));
+            product.setName(productPageScraperService.resolveProductName(verificationUrl, dto.getName().trim()));
         }
         if (imageExplicitlyUpdated) {
-            String imageUrl = persistProductImage(dto.getImageUrl().trim(), shopUrl);
+            String imageUrl = persistProductImage(dto.getImageUrl().trim(), verificationUrl);
             replaceProductImage(product, previousImageUrl, imageUrl);
             previousImageUrl = imageUrl;
         }
@@ -843,18 +789,18 @@ public class VideoService {
             return;
         }
 
-        ProductPageData scraped = productPageScraperService.scrape(shopUrl);
+        ProductPageData scraped = productPageScraperService.scrape(verificationUrl);
         if (!nameExplicitlyUpdated) {
-            if (hasMeaningfulScrapedName(scraped, shopUrl)) {
-                product.setName(resolveScrapedProductName(scraped, shopUrl));
+            if (hasMeaningfulScrapedName(scraped, verificationUrl)) {
+                product.setName(resolveScrapedProductName(scraped, verificationUrl));
             } else {
-                product.setName(buildPendingProductName(shopUrl));
+                product.setName(buildPendingProductName(verificationUrl));
             }
         }
         if (!imageExplicitlyUpdated) {
             String scrapedImage = scraped != null ? scraped.getImageUrl() : null;
             if (scrapedImage != null && !scrapedImage.isBlank()) {
-                String imageUrl = persistProductImage(scrapedImage, shopUrl);
+                String imageUrl = persistProductImage(scrapedImage, verificationUrl);
                 replaceProductImage(product, previousImageUrl, imageUrl);
             } else {
                 String defaultImage = productImageStorageService.ensureDefaultImage();
