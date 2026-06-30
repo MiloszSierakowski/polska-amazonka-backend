@@ -14,7 +14,10 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import pl.polskaamazonka.backend.config.LinkValidationProperties;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.repository.LinkRepository;
-import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerCheckResponse;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerCheckStatus;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerClient;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerTechnicalException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -37,12 +40,16 @@ import static org.mockito.Mockito.when;
 class LinkValidatorServiceTest {
 
     private static final String PRODUCT_URL = "https://allegro.pl/oferta/example-123";
+    private static final String VERIFICATION_URL = "https://allegro.pl/oferta/example-123?verified=1";
 
     @Mock
     private LinkRepository linkRepository;
 
     @Mock
-    private ProductPageScraperService productPageScraperService;
+    private LinkCheckerWorkerClient linkCheckerWorkerClient;
+
+    @Mock
+    private ProductLinkUrlSupport productLinkUrlSupport;
 
     @Mock
     private LinkValidationProperties linkValidationProperties;
@@ -54,12 +61,16 @@ class LinkValidatorServiceTest {
         when(linkValidationProperties.getMaxLinksPerRun()).thenReturn(25);
         when(linkValidationProperties.getDelayMsBetweenChecks()).thenReturn(0L);
         when(linkValidationProperties.getMinHoursBetweenChecks()).thenReturn(24);
+        when(productLinkUrlSupport.verificationUrlForStored(PRODUCT_URL)).thenReturn(VERIFICATION_URL);
+        when(productLinkUrlSupport.verificationUrlForStored("https://allegro.pl/oferta/example-456"))
+                .thenReturn("https://allegro.pl/oferta/example-456?verified=1");
 
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         linkValidatorService = new LinkValidatorService(
                 linkRepository,
-                productPageScraperService,
+                linkCheckerWorkerClient,
+                productLinkUrlSupport,
                 linkValidationProperties,
                 transactionManager
         );
@@ -100,12 +111,13 @@ class LinkValidatorServiceTest {
         Link link = productLink(null, false, false);
         when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(link));
-        when(productPageScraperService.evaluateProductLinkAvailability(PRODUCT_URL))
-                .thenReturn(ProductLinkAvailability.WORKING);
+        when(linkCheckerWorkerClient.check(VERIFICATION_URL))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.WORKING));
 
         linkValidatorService.validateAllLinks();
 
-        verify(productPageScraperService, times(1)).evaluateProductLinkAvailability(PRODUCT_URL);
+        verify(productLinkUrlSupport).verificationUrlForStored(PRODUCT_URL);
+        verify(linkCheckerWorkerClient, times(1)).check(VERIFICATION_URL);
         verify(linkRepository).updateReviewFlags(
                 eq(link.getId()),
                 eq(false),
@@ -119,12 +131,12 @@ class LinkValidatorServiceTest {
         Link link = productLink(Instant.now().minus(48, ChronoUnit.HOURS), false, true);
         when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(link));
-        when(productPageScraperService.evaluateProductLinkAvailability(PRODUCT_URL))
-                .thenReturn(ProductLinkAvailability.UNCERTAIN);
+        when(linkCheckerWorkerClient.check(VERIFICATION_URL))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.UNCERTAIN));
 
         linkValidatorService.validateAllLinks();
 
-        verify(productPageScraperService, times(1)).evaluateProductLinkAvailability(PRODUCT_URL);
+        verify(linkCheckerWorkerClient, times(1)).check(VERIFICATION_URL);
         verify(linkRepository).updateReviewFlags(
                 eq(link.getId()),
                 eq(false),
@@ -143,16 +155,16 @@ class LinkValidatorServiceTest {
 
         when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(failingLink, succeedingLink));
-        doThrow(new RuntimeException("timeout"))
-                .when(productPageScraperService)
-                .evaluateProductLinkAvailability(failingLink.getUrl());
-        when(productPageScraperService.evaluateProductLinkAvailability(succeedingLink.getUrl()))
-                .thenReturn(ProductLinkAvailability.WORKING);
+        doThrow(new LinkCheckerWorkerTechnicalException("timeout"))
+                .when(linkCheckerWorkerClient)
+                .check(VERIFICATION_URL);
+        when(linkCheckerWorkerClient.check("https://allegro.pl/oferta/example-456?verified=1"))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.WORKING));
 
         linkValidatorService.validateAllLinks();
 
-        verify(productPageScraperService).evaluateProductLinkAvailability(failingLink.getUrl());
-        verify(productPageScraperService).evaluateProductLinkAvailability(succeedingLink.getUrl());
+        verify(linkCheckerWorkerClient).check(VERIFICATION_URL);
+        verify(linkCheckerWorkerClient).check("https://allegro.pl/oferta/example-456?verified=1");
         verify(linkRepository).updateReviewFlags(eq(failingLink.getId()), eq(false), eq(true), any(Instant.class));
         verify(linkRepository).updateReviewFlags(eq(succeedingLink.getId()), eq(false), eq(false), any(Instant.class));
     }
@@ -168,7 +180,7 @@ class LinkValidatorServiceTest {
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(linkRepository).findLinksForScheduledValidation(any(Instant.class), pageableCaptor.capture());
         assertEquals(3, pageableCaptor.getValue().getPageSize());
-        verifyNoMoreInteractions(productPageScraperService);
+        verifyNoMoreInteractions(linkCheckerWorkerClient);
     }
 
     @Test
@@ -203,12 +215,15 @@ class LinkValidatorServiceTest {
 
         when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(workingLink, brokenLink, uncertainLink));
-        when(productPageScraperService.evaluateProductLinkAvailability(workingLink.getUrl()))
-                .thenReturn(ProductLinkAvailability.WORKING);
-        when(productPageScraperService.evaluateProductLinkAvailability(brokenLink.getUrl()))
-                .thenReturn(ProductLinkAvailability.BROKEN);
-        when(productPageScraperService.evaluateProductLinkAvailability(uncertainLink.getUrl()))
-                .thenReturn(ProductLinkAvailability.UNCERTAIN);
+        when(productLinkUrlSupport.verificationUrlForStored(workingLink.getUrl())).thenReturn(workingLink.getUrl());
+        when(productLinkUrlSupport.verificationUrlForStored(brokenLink.getUrl())).thenReturn(brokenLink.getUrl());
+        when(productLinkUrlSupport.verificationUrlForStored(uncertainLink.getUrl())).thenReturn(uncertainLink.getUrl());
+        when(linkCheckerWorkerClient.check(workingLink.getUrl()))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.WORKING));
+        when(linkCheckerWorkerClient.check(brokenLink.getUrl()))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.BROKEN));
+        when(linkCheckerWorkerClient.check(uncertainLink.getUrl()))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.UNCERTAIN));
 
         ScheduledLinkValidationStats stats = linkValidatorService.executeScheduledLinkValidation();
 
@@ -221,6 +236,25 @@ class LinkValidatorServiceTest {
     }
 
     @Test
+    void executeScheduledLinkValidation_mapsBlockedStatusToUncertainStats() {
+        Link blockedLink = productLink(null, false, false);
+        when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
+                .thenReturn(List.of(blockedLink));
+        when(linkCheckerWorkerClient.check(VERIFICATION_URL))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.BLOCKED));
+
+        ScheduledLinkValidationStats stats = linkValidatorService.executeScheduledLinkValidation();
+
+        assertEquals(1, stats.getUncertain());
+        verify(linkRepository).updateReviewFlags(
+                eq(blockedLink.getId()),
+                eq(false),
+                eq(true),
+                any(Instant.class)
+        );
+    }
+
+    @Test
     void executeScheduledLinkValidation_countsTechnicalErrorWithoutStoppingBatch() {
         Link failingLink = productLink(null, false, false);
         failingLink.setId(1L);
@@ -230,11 +264,11 @@ class LinkValidatorServiceTest {
 
         when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(failingLink, succeedingLink));
-        doThrow(new RuntimeException("timeout"))
-                .when(productPageScraperService)
-                .evaluateProductLinkAvailability(failingLink.getUrl());
-        when(productPageScraperService.evaluateProductLinkAvailability(succeedingLink.getUrl()))
-                .thenReturn(ProductLinkAvailability.WORKING);
+        doThrow(new LinkCheckerWorkerTechnicalException("timeout"))
+                .when(linkCheckerWorkerClient)
+                .check(VERIFICATION_URL);
+        when(linkCheckerWorkerClient.check("https://allegro.pl/oferta/example-456?verified=1"))
+                .thenReturn(workerResponse(LinkCheckerWorkerCheckStatus.WORKING));
 
         ScheduledLinkValidationStats stats = linkValidatorService.executeScheduledLinkValidation();
 
@@ -244,6 +278,35 @@ class LinkValidatorServiceTest {
         assertEquals(1, stats.getTechnicalErrors());
         assertEquals(0, stats.getBroken());
         assertEquals(0, stats.getUncertain());
+    }
+
+    @Test
+    void executeScheduledLinkValidation_technicalErrorDoesNotMarkLinkAsBroken() {
+        Link link = productLink(null, false, false);
+        when(linkRepository.findLinksForScheduledValidation(any(Instant.class), any(Pageable.class)))
+                .thenReturn(List.of(link));
+        doThrow(new LinkCheckerWorkerTechnicalException("HTTP 503"))
+                .when(linkCheckerWorkerClient)
+                .check(VERIFICATION_URL);
+
+        linkValidatorService.executeScheduledLinkValidation();
+
+        verify(linkRepository).updateReviewFlags(
+                eq(link.getId()),
+                eq(false),
+                eq(true),
+                any(Instant.class)
+        );
+    }
+
+    private static LinkCheckerWorkerCheckResponse workerResponse(LinkCheckerWorkerCheckStatus status) {
+        return new LinkCheckerWorkerCheckResponse(
+                status,
+                "test reason",
+                "https://example.com/product",
+                200,
+                Instant.parse("2026-06-28T10:00:00Z")
+        );
     }
 
     private static Link productLink(Instant lastCheckedAt, boolean isBroken, boolean needsReview) {

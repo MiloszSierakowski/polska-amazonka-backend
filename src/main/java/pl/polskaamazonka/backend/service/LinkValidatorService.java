@@ -8,7 +8,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import pl.polskaamazonka.backend.config.LinkValidationProperties;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.repository.LinkRepository;
-import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerCheckResponse;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerCheckStatus;
+import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerClient;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -79,7 +81,8 @@ public class LinkValidatorService {
     );
 
     private final LinkRepository linkRepository;
-    private final ProductPageScraperService productPageScraperService;
+    private final LinkCheckerWorkerClient linkCheckerWorkerClient;
+    private final ProductLinkUrlSupport productLinkUrlSupport;
     private final LinkValidationProperties linkValidationProperties;
     private final TransactionTemplate transactionTemplate;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -89,12 +92,14 @@ public class LinkValidatorService {
 
     LinkValidatorService(
             LinkRepository linkRepository,
-            ProductPageScraperService productPageScraperService,
+            LinkCheckerWorkerClient linkCheckerWorkerClient,
+            ProductLinkUrlSupport productLinkUrlSupport,
             LinkValidationProperties linkValidationProperties,
             PlatformTransactionManager transactionManager
     ) {
         this.linkRepository = linkRepository;
-        this.productPageScraperService = productPageScraperService;
+        this.linkCheckerWorkerClient = linkCheckerWorkerClient;
+        this.productLinkUrlSupport = productLinkUrlSupport;
         this.linkValidationProperties = linkValidationProperties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -189,9 +194,10 @@ public class LinkValidatorService {
             return ScheduledLinkValidationOutcome.BROKEN;
         }
         if ("product".equals(link.getType())) {
-            ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(url.trim());
-            applyProductAvailability(link, availability, checkedAt);
-            return toOutcome(availability);
+            String verificationUrl = productLinkUrlSupport.verificationUrlForStored(url.trim());
+            LinkCheckerWorkerCheckResponse workerResponse = linkCheckerWorkerClient.check(verificationUrl);
+            applyWorkerCheckResult(link, workerResponse, checkedAt);
+            return toWorkerOutcome(workerResponse.status());
         }
         boolean broken = isBroken(url.trim());
         link.setIsBroken(broken);
@@ -202,11 +208,11 @@ public class LinkValidatorService {
                 : ScheduledLinkValidationOutcome.WORKING;
     }
 
-    private ScheduledLinkValidationOutcome toOutcome(ProductLinkAvailability availability) {
-        return switch (availability) {
+    private ScheduledLinkValidationOutcome toWorkerOutcome(LinkCheckerWorkerCheckStatus status) {
+        return switch (status) {
             case WORKING -> ScheduledLinkValidationOutcome.WORKING;
             case BROKEN -> ScheduledLinkValidationOutcome.BROKEN;
-            case UNCERTAIN -> ScheduledLinkValidationOutcome.UNCERTAIN;
+            case UNCERTAIN, BLOCKED -> ScheduledLinkValidationOutcome.UNCERTAIN;
         };
     }
 
@@ -238,14 +244,15 @@ public class LinkValidatorService {
         }
     }
 
-    private void applyProductAvailability(Link link, ProductLinkAvailability availability, Instant checkedAt) {
-        if (availability == ProductLinkAvailability.UNCERTAIN) {
+    private void applyWorkerCheckResult(Link link, LinkCheckerWorkerCheckResponse response, Instant checkedAt) {
+        LinkCheckerWorkerCheckStatus status = response.status();
+        if (status == LinkCheckerWorkerCheckStatus.UNCERTAIN || status == LinkCheckerWorkerCheckStatus.BLOCKED) {
             markLinkValidationUncertain(link, checkedAt);
             return;
         }
         linkRepository.updateReviewFlags(
                 link.getId(),
-                availability == ProductLinkAvailability.BROKEN,
+                status == LinkCheckerWorkerCheckStatus.BROKEN,
                 false,
                 checkedAt
         );

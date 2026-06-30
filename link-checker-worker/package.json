@@ -1,0 +1,18 @@
+{
+  "name": "link-checker-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright HTTP worker for scheduled product link verification",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/**/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.61.1"
+  }
+}
