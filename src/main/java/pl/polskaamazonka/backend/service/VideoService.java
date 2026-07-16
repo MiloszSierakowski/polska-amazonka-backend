@@ -122,7 +122,7 @@ public class VideoService {
         }
         Video video = videoRepository.findWithProductsByPublicCode(normalizedPublicCode)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE));
-        VideoDTO dto = toPublicDtoWithProducts(video, false);
+        VideoDTO dto = toPublicDtoWithProducts(video, isPromotionActive(video, Instant.now()));
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE);
         }
