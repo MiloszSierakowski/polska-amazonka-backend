@@ -17,6 +17,7 @@ public class VideoMapper {
         dto.setIsActive(video.getIsActive());
         dto.setPromotionStartAt(video.getPromotionStartAt());
         dto.setPromotionEndAt(video.getPromotionEndAt());
+        dto.setPublicCode(video.getPublicCode());
         dto.setProducts(
                 video.getVideoProducts() == null
                         ? java.util.List.of()

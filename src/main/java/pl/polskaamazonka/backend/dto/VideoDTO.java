@@ -17,6 +17,7 @@ public class VideoDTO {
     private Boolean isActive;
     private Instant promotionStartAt;
     private Instant promotionEndAt;
+    private String publicCode;
     private List<ProductDTO> products;
     private List<String> blockReasons;
 }

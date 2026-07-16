@@ -23,6 +23,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             WHERE LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
               AND (l.isBroken IS NULL OR l.isBroken = FALSE)
               AND v.isActive = TRUE
+              AND v.publicCode IS NOT NULL
+              AND TRIM(v.publicCode) <> ''
             ORDER BY p.name ASC
             """)
     List<Product> searchPublicByName(@Param("search") String search, Pageable pageable);

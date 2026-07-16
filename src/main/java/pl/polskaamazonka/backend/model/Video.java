@@ -46,6 +46,9 @@ public class Video {
     @Column(name = "promotion_end_at")
     private Instant promotionEndAt;
 
+    @Column(name = "public_code", length = 20)
+    private String publicCode;
+
     @OneToMany(mappedBy = "video", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<VideoProduct> videoProducts;
 

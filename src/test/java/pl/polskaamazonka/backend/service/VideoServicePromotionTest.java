@@ -113,6 +113,9 @@ class VideoServicePromotionTest {
             new AmazonUrlNormalizer()
     );
 
+    @Spy
+    private VideoPublicCodeSupport videoPublicCodeSupport = new VideoPublicCodeSupport();
+
     @InjectMocks
     @Spy
     private VideoService videoService;
@@ -175,6 +178,8 @@ class VideoServicePromotionTest {
         when(videoThumbnailStorageService.storeFromRemoteUrl(any())).thenReturn("/uploads/videos/thumb.jpg");
         when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
                 .thenReturn(ResponseEntity.ok("{\"thumbnail_url\":\"https://thumb.example/video.jpg\"}"));
+        when(videoRepository.existsByPublicCode(anyString())).thenReturn(false);
+        when(videoRepository.existsByPublicCodeAndIdNot(anyString(), any())).thenReturn(false);
     }
 
     @Test
@@ -350,12 +355,14 @@ class VideoServicePromotionTest {
     void publicVideoDtoDoesNotExposePromotionDatesOrPromoCodeAtThisStage() {
         video.setPromotionStartAt(PROMOTION_START);
         video.setPromotionEndAt(PROMOTION_END);
+        video.setPublicCode("A110");
         relation.setPromoCode("SECRET");
 
         VideoDTO dto = videoService.getByIdPublic(VIDEO_ID);
 
         assertNull(dto.getPromotionStartAt());
         assertNull(dto.getPromotionEndAt());
+        assertEquals("A110", dto.getPublicCode());
         assertNull(dto.getProducts().get(0).getPromoCode());
     }
 
@@ -501,6 +508,7 @@ class VideoServicePromotionTest {
         dto.setIsActive(true);
         dto.setPromotionStartAt(promotionStartAt);
         dto.setPromotionEndAt(promotionEndAt);
+        dto.setPublicCode("A110");
         return dto;
     }
 
@@ -555,6 +563,7 @@ class VideoServicePromotionTest {
         result.setCreatedAt(Instant.now().minusSeconds(id));
         result.setPromotionStartAt(promotionStartAt);
         result.setPromotionEndAt(promotionEndAt);
+        result.setPublicCode("V" + id);
         return result;
     }
 

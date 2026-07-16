@@ -29,4 +29,13 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
 
     @Query("SELECT DISTINCT v FROM Video v LEFT JOIN FETCH v.videoProducts vp LEFT JOIN FETCH vp.product p LEFT JOIN FETCH p.productLink WHERE v.id = :id")
     Optional<Video> findWithProductsById(@Param("id") Long id);
+
+    @Query("SELECT DISTINCT v FROM Video v LEFT JOIN FETCH v.videoProducts vp LEFT JOIN FETCH vp.product p LEFT JOIN FETCH p.productLink WHERE v.publicCode = :publicCode")
+    Optional<Video> findWithProductsByPublicCode(@Param("publicCode") String publicCode);
+
+    Optional<Video> findByPublicCode(String publicCode);
+
+    boolean existsByPublicCode(String publicCode);
+
+    boolean existsByPublicCodeAndIdNot(String publicCode, Long id);
 }

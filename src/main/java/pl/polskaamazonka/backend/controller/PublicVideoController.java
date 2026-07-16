@@ -28,6 +28,11 @@ public class PublicVideoController {
         return videoService.getAllPublic(categoryId);
     }
 
+    @GetMapping("/by-code/{publicCode}")
+    public VideoDTO getByPublicCode(@PathVariable String publicCode) {
+        return videoService.getByPublicCodePublic(publicCode);
+    }
+
     @GetMapping("/{id}")
     public VideoDTO getById(@PathVariable Long id) {
         return videoService.getByIdPublic(id);

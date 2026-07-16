@@ -62,6 +62,12 @@ public class VideoService {
     private final ProductNameCleaner productNameCleaner;
     private final ActivityLogService activityLogService;
     private final ProductLinkUrlSupport productLinkUrlSupport;
+    private final VideoPublicCodeSupport videoPublicCodeSupport;
+
+    private static final String PUBLIC_CODE_REQUIRED_MESSAGE = "Kod filmu jest wymagany.";
+    private static final String PUBLIC_CODE_INVALID_FORMAT_MESSAGE = "Kod filmu ma nieprawidłowy format.";
+    private static final String PUBLIC_CODE_REMOVAL_NOT_ALLOWED_MESSAGE = "Kod filmu nie może zostać usunięty.";
+    private static final String PUBLIC_VIDEO_NOT_FOUND_MESSAGE = "Film nie istnieje lub link jest nieaktualny.";
 
     @Transactional
     public List<VideoDTO> getAll(Long categoryId) {
@@ -107,6 +113,23 @@ public class VideoService {
     }
 
     @Transactional
+    public VideoDTO getByPublicCodePublic(String rawPublicCode) {
+        String normalizedPublicCode;
+        try {
+            normalizedPublicCode = videoPublicCodeSupport.normalize(rawPublicCode);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE);
+        }
+        Video video = videoRepository.findWithProductsByPublicCode(normalizedPublicCode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE));
+        VideoDTO dto = toPublicDtoWithProducts(video, false);
+        if (dto == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE);
+        }
+        return dto;
+    }
+
+    @Transactional
     public VideoDTO getById(Long id) {
         Video video = videoRepository.findWithProductsById(id)
                 .orElse(null);
@@ -122,11 +145,14 @@ public class VideoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         validatePromotionDates(dto.getPromotionStartAt(), dto.getPromotionEndAt());
+        String publicCode = resolvePublicCodeForCreate(dto.getPublicCode());
+        ensurePublicCodeAvailable(publicCode, null);
         Video video = new Video();
         video.setTiktokUrl(dto.getTiktokUrl());
         video.setLocalMp4Url(dto.getLocalMp4Url());
         video.setTitle(dto.getTitle());
         video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        video.setPublicCode(publicCode);
         applyPromotionDates(video, dto);
         video.setCreatedAt(Instant.now());
         Video saved = videoRepository.save(video);
@@ -151,11 +177,14 @@ public class VideoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         validatePromotionDates(dto.getPromotionStartAt(), dto.getPromotionEndAt());
+        String publicCode = resolvePublicCodeForUpdate(dto.getPublicCode(), video.getPublicCode());
+        ensurePublicCodeAvailable(publicCode, id);
         boolean tiktokChanged = !Objects.equals(video.getTiktokUrl(), dto.getTiktokUrl());
         String previousPreview = video.getPreviewImageUrl();
         video.setTitle(dto.getTitle());
         video.setTiktokUrl(dto.getTiktokUrl());
         video.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : Boolean.TRUE);
+        video.setPublicCode(publicCode);
         applyPromotionDates(video, dto);
         if (dto.getLocalMp4Url() != null) {
             video.setLocalMp4Url(dto.getLocalMp4Url());
@@ -589,6 +618,9 @@ public class VideoService {
         if (!Boolean.TRUE.equals(video.getIsActive())) {
             return null;
         }
+        if (!hasPublicCodeForPublicApi(video)) {
+            return null;
+        }
         VideoDTO dto = VideoMapper.toDTO(video);
         if (!includePromoCodes) {
             dto.setPromotionStartAt(null);
@@ -615,6 +647,14 @@ public class VideoService {
             return false;
         }
         return !Boolean.TRUE.equals(link.getIsBroken());
+    }
+
+    private boolean hasPublicCodeForPublicApi(Video video) {
+        if (video == null) {
+            return false;
+        }
+        String publicCode = video.getPublicCode();
+        return publicCode != null && !publicCode.isBlank();
     }
 
     private boolean isPromotionActive(Video video, Instant now) {
@@ -680,6 +720,49 @@ public class VideoService {
         }
         String trimmed = promoCode.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String resolvePublicCodeForCreate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, PUBLIC_CODE_REQUIRED_MESSAGE);
+        }
+        try {
+            return videoPublicCodeSupport.normalize(raw);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, PUBLIC_CODE_INVALID_FORMAT_MESSAGE);
+        }
+    }
+
+    private String resolvePublicCodeForUpdate(String raw, String currentPublicCode) {
+        if (raw == null || raw.isBlank()) {
+            if (currentPublicCode != null && !currentPublicCode.isBlank()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        PUBLIC_CODE_REMOVAL_NOT_ALLOWED_MESSAGE
+                );
+            }
+            return null;
+        }
+        try {
+            return videoPublicCodeSupport.normalize(raw);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, PUBLIC_CODE_INVALID_FORMAT_MESSAGE);
+        }
+    }
+
+    private void ensurePublicCodeAvailable(String publicCode, Long excludeVideoId) {
+        if (publicCode == null) {
+            return;
+        }
+        boolean taken = excludeVideoId == null
+                ? videoRepository.existsByPublicCode(publicCode)
+                : videoRepository.existsByPublicCodeAndIdNot(publicCode, excludeVideoId);
+        if (taken) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Kod filmu " + publicCode + " jest już używany."
+            );
+        }
     }
 
     private List<String> resolveBlockReasons(Video video, List<VideoProduct> relations) {
