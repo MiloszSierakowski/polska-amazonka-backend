@@ -39,7 +39,6 @@ public class SecurityConfig {
             "/api/videos/**",
             "/api/categories/**",
             "/api/shops/**",
-            "/api/affiliate-codes/**",
             "/api/products/**",
             "/api/users/**"
     };

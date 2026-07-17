@@ -6,146 +6,131 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
-import pl.polskaamazonka.backend.model.AffiliateCode;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
-import pl.polskaamazonka.backend.model.Shop;
-import pl.polskaamazonka.backend.model.enums.AffiliateCodeType;
 import pl.polskaamazonka.backend.repository.ProductRepository;
-import pl.polskaamazonka.backend.repository.ShopRepository;
-import pl.polskaamazonka.backend.service.scraper.ProductPageParserFactory;
 
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class ProductRedirectServiceTest {
 
-    private static final String PRODUCT_URL = "https://pl.aliexpress.com/item/1005001234567890.html";
-    private static final String AFFILIATED_URL = PRODUCT_URL + "?aff_fsk=EXISTING&aff_platform=portals-tool";
-    private static final String ALIEXPRESS_SHORT_URL = "https://s.click.aliexpress.com/e/_abc123";
-    private static final String TEMU_SHORT_URL = "https://share.temu.com/abc123";
+    private static final String ALIEXPRESS_URL = "https://pl.aliexpress.com/item/1005001234567890.html";
+    private static final String ALLEGRO_URL = "https://allegro.pl/oferta/produkt-1234567890";
+    private static final String TEMU_URL = "https://www.temu.com/pl/product-1234567890.html";
+    private static final String AMAZON_URL = "https://www.amazon.pl/dp/B012345678";
 
     @Mock
     private ProductRepository productRepository;
-    @Mock
-    private AffiliateCodeService affiliateCodeService;
-    @Mock
-    private ProductPageParserFactory productPageParserFactory;
-    @Mock
-    private AffiliateUrlBuilder affiliateUrlBuilder;
-    @Mock
-    private AffiliateTrackingDetector affiliateTrackingDetector;
-    @Mock
-    private AffiliateShortLinkResolver affiliateShortLinkResolver;
-    @Mock
-    private ShopRepository shopRepository;
 
     @InjectMocks
     private ProductRedirectService productRedirectService;
 
     private Product product;
-    private Shop shop;
-    private AffiliateCode affiliateCode;
 
     @BeforeEach
     void setUp() {
-        Link link = new Link();
-        link.setUrl(PRODUCT_URL);
-
         product = new Product();
         product.setId(10L);
-        product.setProductLink(link);
+    }
 
-        shop = new Shop();
-        shop.setId(1L);
-        shop.setSlug("aliexpress");
-
-        affiliateCode = new AffiliateCode();
-        affiliateCode.setType(AffiliateCodeType.AFFILIATE);
-        affiliateCode.setCodeValue("AFF123");
-        affiliateCode.setShop(shop);
-
+    @Test
+    void resolveRedirectUrlForAliExpressReturnsExactStoredUrl() {
+        setProductUrl(ALIEXPRESS_URL);
         when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
-        when(affiliateShortLinkResolver.isWhitelistedShortLink(anyString())).thenReturn(false);
-        when(affiliateTrackingDetector.hasExistingAffiliateTracking(anyString())).thenReturn(false);
-    }
-
-    @Test
-    void resolveRedirectUrlAppliesActiveAffiliateCode() {
-        when(productPageParserFactory.detectPlatform(PRODUCT_URL)).thenReturn("aliexpress");
-        when(shopRepository.findBySlug("aliexpress")).thenReturn(Optional.of(shop));
-        when(affiliateCodeService.getActiveAffiliateCode(shop)).thenReturn(Optional.of(affiliateCode));
-        when(affiliateUrlBuilder.apply(PRODUCT_URL, "AFF123", shop))
-                .thenReturn(PRODUCT_URL + "?aff_fsk=AFF123&aff_platform=portals-tool");
 
         String result = productRedirectService.resolveRedirectUrl(10L);
 
-        assertEquals(PRODUCT_URL + "?aff_fsk=AFF123&aff_platform=portals-tool", result);
-        verify(affiliateCodeService).getActiveAffiliateCode(shop);
+        assertEquals(ALIEXPRESS_URL, result);
     }
 
     @Test
-    void resolveRedirectUrlWithoutAffiliateCodeReturnsOriginalUrl() {
-        when(productPageParserFactory.detectPlatform(PRODUCT_URL)).thenReturn("aliexpress");
-        when(shopRepository.findBySlug("aliexpress")).thenReturn(Optional.of(shop));
-        when(affiliateCodeService.getActiveAffiliateCode(shop)).thenReturn(Optional.empty());
+    void resolveRedirectUrlForAllegroReturnsExactStoredUrl() {
+        setProductUrl(ALLEGRO_URL);
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
 
         String result = productRedirectService.resolveRedirectUrl(10L);
 
-        assertEquals(PRODUCT_URL, result);
-        verify(affiliateCodeService).getActiveAffiliateCode(shop);
-        verifyNoInteractions(affiliateUrlBuilder);
+        assertEquals(ALLEGRO_URL, result);
     }
 
     @Test
-    void resolveRedirectUrlWithoutDetectedShopReturnsOriginalUrl() {
-        when(productPageParserFactory.detectPlatform(PRODUCT_URL)).thenReturn("generic");
+    void resolveRedirectUrlForTemuReturnsExactStoredUrl() {
+        setProductUrl(TEMU_URL);
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
 
         String result = productRedirectService.resolveRedirectUrl(10L);
 
-        assertEquals(PRODUCT_URL, result);
-        verifyNoInteractions(affiliateCodeService, affiliateUrlBuilder, shopRepository);
+        assertEquals(TEMU_URL, result);
     }
 
     @Test
-    void resolveRedirectUrlWithExistingAffiliateParamsReturnsStoredUrlUnchanged() {
-        product.getProductLink().setUrl(AFFILIATED_URL);
-        when(affiliateTrackingDetector.hasExistingAffiliateTracking(AFFILIATED_URL)).thenReturn(true);
+    void resolveRedirectUrlForAmazonReturnsExactStoredUrl() {
+        setProductUrl(AMAZON_URL);
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
 
         String result = productRedirectService.resolveRedirectUrl(10L);
 
-        assertEquals(AFFILIATED_URL, result);
-        verifyNoInteractions(affiliateCodeService, affiliateUrlBuilder, shopRepository, productPageParserFactory);
+        assertEquals(AMAZON_URL, result);
     }
 
     @Test
-    void resolveRedirectUrlForAliExpressShortLinkReturnsStoredUrlUnchanged() {
-        product.getProductLink().setUrl(ALIEXPRESS_SHORT_URL);
-        when(affiliateShortLinkResolver.isWhitelistedShortLink(ALIEXPRESS_SHORT_URL)).thenReturn(true);
+    void resolveRedirectUrlForMissingProductThrowsNotFound() {
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.empty());
 
-        String result = productRedirectService.resolveRedirectUrl(10L);
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> productRedirectService.resolveRedirectUrl(10L)
+        );
 
-        assertEquals(ALIEXPRESS_SHORT_URL, result);
-        verifyNoInteractions(affiliateCodeService, affiliateUrlBuilder, shopRepository, productPageParserFactory);
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
     }
 
     @Test
-    void resolveRedirectUrlForTemuShortLinkReturnsStoredUrlUnchanged() {
-        product.getProductLink().setUrl(TEMU_SHORT_URL);
-        when(affiliateShortLinkResolver.isWhitelistedShortLink(TEMU_SHORT_URL)).thenReturn(true);
+    void resolveRedirectUrlForMissingLinkThrowsNotFound() {
+        product.setProductLink(null);
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> productRedirectService.resolveRedirectUrl(10L)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+    }
+
+    @Test
+    void resolveRedirectUrlForBlankLinkThrowsNotFound() {
+        setProductUrl("   ");
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> productRedirectService.resolveRedirectUrl(10L)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+    }
+
+    @Test
+    void resolveRedirectUrlTrimsStoredUrl() {
+        setProductUrl("  " + ALIEXPRESS_URL + "  ");
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
 
         String result = productRedirectService.resolveRedirectUrl(10L);
 
-        assertEquals(TEMU_SHORT_URL, result);
-        verifyNoInteractions(affiliateCodeService, affiliateUrlBuilder, shopRepository, productPageParserFactory);
+        assertEquals(ALIEXPRESS_URL, result);
+    }
+
+    private void setProductUrl(String url) {
+        Link link = new Link();
+        link.setUrl(url);
+        product.setProductLink(link);
     }
 }
