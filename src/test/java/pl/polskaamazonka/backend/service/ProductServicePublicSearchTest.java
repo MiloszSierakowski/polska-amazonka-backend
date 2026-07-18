@@ -18,6 +18,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -42,17 +43,26 @@ class ProductServicePublicSearchTest {
     }
 
     @Test
-    void searchPublicByNameQueryRequiresActiveVideoWithPublicCode() throws Exception {
-        Method method = ProductRepository.class.getDeclaredMethod("searchPublicByName", String.class, Pageable.class);
+    void searchPublicByNameOrTagQueryPreservesPublicVisibilityFilters() throws Exception {
+        Method method = ProductRepository.class.getDeclaredMethod("searchPublicByNameOrTag", String.class, Pageable.class);
         org.springframework.data.jpa.repository.Query query =
                 method.getAnnotation(org.springframework.data.jpa.repository.Query.class);
 
         assertNotNull(query);
         String jpql = query.value();
         assertTrue(jpql.contains("SELECT DISTINCT p"));
+        assertTrue(jpql.contains("JOIN FETCH p.productLink l"));
+        assertTrue(jpql.contains("LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))"));
+        assertTrue(jpql.contains("OR EXISTS ("));
+        assertTrue(jpql.contains("SELECT t.id FROM ProductTag t"));
+        assertTrue(jpql.contains("WHERE t.product = p"));
+        assertTrue(jpql.contains("LOWER(t.value) LIKE LOWER(CONCAT('%', :search, '%'))"));
+        assertTrue(jpql.contains(")\n              AND (l.isBroken IS NULL OR l.isBroken = FALSE)"));
+        assertFalse(jpql.contains("JOIN FETCH p.tags"));
         assertTrue(jpql.contains("v.isActive = TRUE"));
         assertTrue(jpql.contains("v.publicCode IS NOT NULL"));
         assertTrue(jpql.contains("TRIM(v.publicCode) <> ''"));
+        assertTrue(jpql.contains("ORDER BY p.name ASC"));
     }
 
     @Test
@@ -63,7 +73,7 @@ class ProductServicePublicSearchTest {
 
     @Test
     void searchPublicMapsProductsMatchingName() {
-        when(productRepository.searchPublicByName(eq("szuk"), any(Pageable.class)))
+        when(productRepository.searchPublicByNameOrTag(eq("szuk"), any(Pageable.class)))
                 .thenReturn(List.of(publicProduct));
 
         List<PublicProductDto> result = productService.searchPublic("  szuk  ");
@@ -74,13 +84,13 @@ class ProductServicePublicSearchTest {
         assertEquals("https://img.example/product.jpg", result.get(0).getImageUrl());
 
         ArgumentCaptor<String> searchCaptor = ArgumentCaptor.forClass(String.class);
-        verify(productRepository).searchPublicByName(searchCaptor.capture(), any(Pageable.class));
+        verify(productRepository).searchPublicByNameOrTag(searchCaptor.capture(), any(Pageable.class));
         assertEquals("szuk", searchCaptor.getValue());
     }
 
     @Test
     void searchPublicReturnsSingleEntryWhenRepositoryReturnsDistinctProduct() {
-        when(productRepository.searchPublicByName(eq("produkt"), any(Pageable.class)))
+        when(productRepository.searchPublicByNameOrTag(eq("produkt"), any(Pageable.class)))
                 .thenReturn(List.of(publicProduct));
 
         List<PublicProductDto> result = productService.searchPublic("produkt");
@@ -90,7 +100,7 @@ class ProductServicePublicSearchTest {
 
     @Test
     void searchPublicReturnsEmptyWhenRepositoryFindsNoEligibleProducts() {
-        when(productRepository.searchPublicByName(eq("brak"), any(Pageable.class)))
+        when(productRepository.searchPublicByNameOrTag(eq("brak"), any(Pageable.class)))
                 .thenReturn(List.of());
 
         assertTrue(productService.searchPublic("brak").isEmpty());

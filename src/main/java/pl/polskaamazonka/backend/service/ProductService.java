@@ -2,6 +2,7 @@ package pl.polskaamazonka.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.PublicProductDto;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
@@ -20,12 +21,14 @@ public class ProductService {
 
     private final ProductRepository productRepository;
 
+    @Transactional(readOnly = true)
     public List<ProductDTO> getAll() {
         return productRepository.findAll().stream()
                 .map(ProductMapper::toDTO)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public ProductDTO getById(Long id) {
         return productRepository.findById(id)
                 .map(ProductMapper::toDTO)
@@ -36,7 +39,7 @@ public class ProductService {
         if (search == null || search.isBlank()) {
             return List.of();
         }
-        return productRepository.searchPublicByName(
+        return productRepository.searchPublicByNameOrTag(
                         search.trim(),
                         PageRequest.of(0, PUBLIC_SEARCH_LIMIT)
                 )

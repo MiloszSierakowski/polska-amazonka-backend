@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.dto.LinkDTO;
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
@@ -358,7 +359,7 @@ class VideoServicePromotionTest {
         video.setPublicCode("A110");
         relation.setPromoCode("SECRET");
 
-        VideoDTO dto = videoService.getByIdPublic(VIDEO_ID);
+        PublicVideoDTO dto = videoService.getByIdPublic(VIDEO_ID);
 
         assertNull(dto.getPromotionStartAt());
         assertNull(dto.getPromotionEndAt());
@@ -373,7 +374,7 @@ class VideoServicePromotionTest {
         when(videoRepository.findAllActivePromoted(any(Instant.class))).thenReturn(List.of(promoted));
         when(videoProductRepository.findByVideo_Id(20L)).thenReturn(List.of(promotedRelation));
 
-        List<VideoDTO> result = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> result = videoService.getAllPromotedPublic();
 
         assertEquals(1, result.size());
         assertEquals(20L, result.get(0).getId());
@@ -392,9 +393,9 @@ class VideoServicePromotionTest {
         when(videoProductRepository.findByVideo_Id(23L)).thenReturn(List.of(relation(expired, product(23L, "Wygasła", PRODUCT_URL), "EXPIRED")));
         when(videoProductRepository.findByVideo_Id(24L)).thenReturn(List.of(relation(normal, product(24L, "Zwykła", PRODUCT_URL), "NORMAL")));
 
-        List<VideoDTO> result = videoService.getAllPublic(null);
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
-        assertEquals(List.of(22L, 23L, 24L), result.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(22L, 23L, 24L), result.stream().map(PublicVideoDTO::getId).toList());
         assertTrue(result.stream().flatMap(video -> video.getProducts().stream()).allMatch(product -> product.getPromoCode() == null));
     }
 
@@ -408,7 +409,7 @@ class VideoServicePromotionTest {
         when(videoProductRepository.findByVideo_Id(26L)).thenReturn(List.of(relation(expired, product(26L, "Wygasła", PRODUCT_URL), "EXPIRED")));
         when(videoProductRepository.findByVideo_Id(27L)).thenReturn(List.of(relation(normal, product(27L, "Zwykła", PRODUCT_URL), "NORMAL")));
 
-        List<VideoDTO> result = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> result = videoService.getAllPromotedPublic();
 
         assertTrue(result.isEmpty());
     }
@@ -421,9 +422,9 @@ class VideoServicePromotionTest {
         when(videoProductRepository.findByVideo_Id(31L)).thenReturn(List.of(relation(newer, product(31L, "Nowsza", PRODUCT_URL), null)));
         when(videoProductRepository.findByVideo_Id(32L)).thenReturn(List.of(relation(older, product(32L, "Starsza", PRODUCT_URL), null)));
 
-        List<VideoDTO> result = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> result = videoService.getAllPromotedPublic();
 
-        assertEquals(List.of(31L, 32L), result.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(31L, 32L), result.stream().map(PublicVideoDTO::getId).toList());
     }
 
     @Test
@@ -441,9 +442,9 @@ class VideoServicePromotionTest {
                 relation(mixedProducts, workingProduct, "WORKING")
         ));
 
-        List<VideoDTO> result = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> result = videoService.getAllPromotedPublic();
 
-        assertEquals(List.of(43L), result.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(43L), result.stream().map(PublicVideoDTO::getId).toList());
         assertEquals(1, result.get(0).getProducts().size());
         assertEquals(432L, result.get(0).getProducts().get(0).getId());
         assertEquals("WORKING", result.get(0).getProducts().get(0).getPromoCode());
@@ -457,9 +458,9 @@ class VideoServicePromotionTest {
         when(videoProductRepository.findByVideo_Id(51L)).thenReturn(List.of(relation(first, product(51L, "Pierwszy", PRODUCT_URL), null)));
         when(videoProductRepository.findByVideo_Id(52L)).thenReturn(List.of(relation(second, product(52L, "Drugi", PRODUCT_URL), null)));
 
-        List<VideoDTO> result = videoService.getAllPublic(null);
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
-        assertEquals(List.of(51L, 52L), result.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(51L, 52L), result.stream().map(PublicVideoDTO::getId).toList());
     }
 
     @Test
@@ -470,9 +471,9 @@ class VideoServicePromotionTest {
         when(videoProductRepository.findByVideo_Id(61L)).thenReturn(List.of(relation(active, product(61L, "Aktywna", PRODUCT_URL), null)));
         when(videoProductRepository.findByVideo_Id(62L)).thenReturn(List.of(relation(future, product(62L, "Zaplanowana", PRODUCT_URL), null)));
 
-        List<VideoDTO> result = videoService.getAllPublic(7L);
+        List<PublicVideoDTO> result = videoService.getAllPublic(7L);
 
-        assertEquals(List.of(62L), result.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(62L), result.stream().map(PublicVideoDTO::getId).toList());
     }
 
     @Test
@@ -482,10 +483,10 @@ class VideoServicePromotionTest {
         when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(active));
         when(videoProductRepository.findByVideo_Id(71L)).thenReturn(List.of(relation(active, product(71L, "Aktywna", PRODUCT_URL), "ACTIVE")));
 
-        List<VideoDTO> promoted = videoService.getAllPromotedPublic();
-        List<VideoDTO> regular = videoService.getAllPublic(null);
+        List<PublicVideoDTO> promoted = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> regular = videoService.getAllPublic(null);
 
-        assertEquals(List.of(71L), promoted.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(71L), promoted.stream().map(PublicVideoDTO::getId).toList());
         assertFalse(regular.stream().anyMatch(video -> video.getId().equals(71L)));
     }
 

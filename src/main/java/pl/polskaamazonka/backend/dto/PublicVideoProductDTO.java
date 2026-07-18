@@ -1,16 +1,15 @@
 package pl.polskaamazonka.backend.dto;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
-import java.util.List;
-
-@Data
-public class ProductDTO {
+@Getter
+@Setter
+public class PublicVideoProductDTO {
     private Long id;
     private String name;
     private String imageUrl;
     private Long productLinkId;
     private LinkDTO productLink;
     private String promoCode;
-    private List<String> tags;
 }

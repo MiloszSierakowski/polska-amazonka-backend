@@ -281,7 +281,22 @@ class VideoServiceAttachProductTest {
         verify(linkRepository, never()).save(any());
     }
 
-    private ProductDTO productDto(String url) {
+    @Test
+    void addProduct_savesNormalizedTagsOnNewGlobalProduct() {
+        ProductDTO dto = productDto(ALIEXPRESS_PRODUCT_URL);
+        dto.setTags(java.util.List.of("  Gąbka   do naczyń ", "gąbka do naczyń", "kuchnia"));
+
+        videoService.addProduct(VIDEO_ID, dto);
+
+        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(productCaptor.capture());
+        assertEquals(
+                java.util.List.of("Gąbka do naczyń", "kuchnia"),
+                productCaptor.getValue().getTags().stream().map(tag -> tag.getValue()).toList()
+        );
+    }
+
+    private ProductDTO productDto(String url) {
         ProductDTO dto = new ProductDTO();
         LinkDTO productLink = new LinkDTO();
         productLink.setUrl(url);
@@ -302,5 +317,4 @@ class VideoServiceAttachProductTest {
             return expansions.get(url);
         }
     }
-}
-
+}

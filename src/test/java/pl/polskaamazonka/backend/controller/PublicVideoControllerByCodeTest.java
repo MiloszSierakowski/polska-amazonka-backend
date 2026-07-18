@@ -2,7 +2,7 @@ package pl.polskaamazonka.backend.controller;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.GetMapping;
-import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.service.VideoService;
 
 import java.lang.reflect.Method;
@@ -19,11 +19,11 @@ class PublicVideoControllerByCodeTest {
     void getByPublicCodeDelegatesToService() {
         VideoService videoService = mock(VideoService.class);
         PublicVideoController controller = new PublicVideoController(videoService);
-        VideoDTO dto = new VideoDTO();
+        PublicVideoDTO dto = new PublicVideoDTO();
         dto.setPublicCode("A110");
         when(videoService.getByPublicCodePublic("A110")).thenReturn(dto);
 
-        VideoDTO result = controller.getByPublicCode("A110");
+        PublicVideoDTO result = controller.getByPublicCode("A110");
 
         assertEquals(dto, result);
         verify(videoService).getByPublicCodePublic("A110");

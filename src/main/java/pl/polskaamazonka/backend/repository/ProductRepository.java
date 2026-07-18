@@ -20,12 +20,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             JOIN vp.product p
             JOIN FETCH p.productLink l
             JOIN vp.video v
-            WHERE LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
+            WHERE (
+                LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR EXISTS (
+                    SELECT t.id FROM ProductTag t
+                    WHERE t.product = p
+                      AND LOWER(t.value) LIKE LOWER(CONCAT('%', :search, '%'))
+                )
+            )
               AND (l.isBroken IS NULL OR l.isBroken = FALSE)
               AND v.isActive = TRUE
               AND v.publicCode IS NOT NULL
               AND TRIM(v.publicCode) <> ''
             ORDER BY p.name ASC
             """)
-    List<Product> searchPublicByName(@Param("search") String search, Pageable pageable);
+    List<Product> searchPublicByNameOrTag(@Param("search") String search, Pageable pageable);
 }

@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 import pl.polskaamazonka.backend.config.UploadPaths;
 import pl.polskaamazonka.backend.dto.ProductDTO;
+import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.dto.ProductLinkVerifyResultDTO;
 import pl.polskaamazonka.backend.dto.QuickProductLinkValidationResult;
 import pl.polskaamazonka.backend.dto.VideoDTO;
@@ -80,7 +81,7 @@ public class VideoService {
     }
 
     @Transactional
-    public List<VideoDTO> getAllPublic(Long categoryId) {
+    public List<PublicVideoDTO> getAllPublic(Long categoryId) {
         Instant now = Instant.now();
         List<Video> videos = categoryId == null
                 ? videoRepository.findAllByOrderByCreatedAtDesc()
@@ -93,7 +94,7 @@ public class VideoService {
     }
 
     @Transactional
-    public List<VideoDTO> getAllPromotedPublic() {
+    public List<PublicVideoDTO> getAllPromotedPublic() {
         Instant now = Instant.now();
         return videoRepository.findAllActivePromoted(now).stream()
                 .filter(video -> isPromotionActive(video, now))
@@ -103,7 +104,7 @@ public class VideoService {
     }
 
     @Transactional
-    public VideoDTO getByIdPublic(Long id) {
+    public PublicVideoDTO getByIdPublic(Long id) {
         Video video = videoRepository.findWithProductsById(id)
                 .orElse(null);
         if (video == null) {
@@ -113,7 +114,7 @@ public class VideoService {
     }
 
     @Transactional
-    public VideoDTO getByPublicCodePublic(String rawPublicCode) {
+    public PublicVideoDTO getByPublicCodePublic(String rawPublicCode) {
         String normalizedPublicCode;
         try {
             normalizedPublicCode = videoPublicCodeSupport.normalize(rawPublicCode);
@@ -122,7 +123,7 @@ public class VideoService {
         }
         Video video = videoRepository.findWithProductsByPublicCode(normalizedPublicCode)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE));
-        VideoDTO dto = toPublicDtoWithProducts(video, isPromotionActive(video, Instant.now()));
+        PublicVideoDTO dto = toPublicDtoWithProducts(video, isPromotionActive(video, Instant.now()));
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, PUBLIC_VIDEO_NOT_FOUND_MESSAGE);
         }
@@ -227,6 +228,7 @@ public class VideoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         Link link = product.getProductLink();
+        List<String> normalizedTags = ProductTagNormalizer.normalize(dto.getTags());
         String previousUrl = link.getUrl();
         String rawShopUrl = resolveShopUrl(dto);
         if (rawShopUrl == null || rawShopUrl.isBlank()) {
@@ -257,6 +259,7 @@ public class VideoService {
             }
         }
         relation.setPromoCode(normalizePromoCode(dto.getPromoCode()));
+        product.replaceTags(normalizedTags);
         linkRepository.save(link);
         productRepository.save(product);
         videoProductRepository.save(relation);
@@ -555,6 +558,7 @@ public class VideoService {
         if (dto == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
+        List<String> normalizedTags = ProductTagNormalizer.normalize(dto.getTags());
         QuickProductLinkValidationResult validation = productLinkUrlSupport.validateProductUrl(resolveShopUrl(dto));
         String storedUrl = productLinkUrlSupport.storedUrl(validation);
         String verificationUrl = productLinkUrlSupport.verificationUrl(validation);
@@ -586,6 +590,7 @@ public class VideoService {
         product.setName(productName);
         product.setImageUrl(imageUrl);
         product.setProductLink(link);
+        product.replaceTags(normalizedTags);
         product = productRepository.save(product);
 
         VideoProduct videoProduct = new VideoProduct();
@@ -614,25 +619,32 @@ public class VideoService {
         return dto;
     }
 
-    private VideoDTO toPublicDtoWithProducts(Video video, boolean includePromoCodes) {
+    private PublicVideoDTO toPublicDtoWithProducts(Video video, boolean includePromoCodes) {
         if (!Boolean.TRUE.equals(video.getIsActive())) {
             return null;
         }
         if (!hasPublicCodeForPublicApi(video)) {
             return null;
         }
-        VideoDTO dto = VideoMapper.toDTO(video);
+        PublicVideoDTO dto = new PublicVideoDTO();
+        dto.setId(video.getId());
+        dto.setTiktokUrl(video.getTiktokUrl());
+        dto.setLocalMp4Url(video.getLocalMp4Url());
+        dto.setPreviewImageUrl(video.getPreviewImageUrl());
+        dto.setTitle(video.getTitle());
+        dto.setIsActive(video.getIsActive());
+        dto.setPublicCode(video.getPublicCode());
+        dto.setPromotionStartAt(video.getPromotionStartAt());
+        dto.setPromotionEndAt(video.getPromotionEndAt());
         if (!includePromoCodes) {
             dto.setPromotionStartAt(null);
             dto.setPromotionEndAt(null);
         }
         dto.setPreviewImageUrl(resolveAndPersistPreview(video));
-        List<ProductDTO> products = videoProductRepository.findByVideo_Id(video.getId()).stream()
+        var products = videoProductRepository.findByVideo_Id(video.getId()).stream()
                 .filter(videoProduct -> videoProduct.getProduct() != null)
                 .filter(videoProduct -> hasWorkingLink(videoProduct.getProduct()))
-                .map(videoProduct -> includePromoCodes
-                        ? ProductMapper.toDTO(videoProduct)
-                        : ProductMapper.toDTO(videoProduct.getProduct()))
+                .map(videoProduct -> ProductMapper.toPublicVideoDTO(videoProduct, includePromoCodes))
                 .toList();
         if (products.isEmpty()) {
             return null;

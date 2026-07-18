@@ -6,7 +6,11 @@ import lombok.Setter;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 @Getter
 @Setter
@@ -30,4 +34,31 @@ public class Product {
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<VideoProduct> videoProducts;
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("displayOrder ASC")
+    private List<ProductTag> tags = new ArrayList<>();
+
+    public void replaceTags(List<String> values) {
+        Map<String, ProductTag> existingTagsByValue = new LinkedHashMap<>();
+        for (ProductTag tag : tags) {
+            existingTagsByValue.put(tag.getValue().toLowerCase(Locale.ROOT), tag);
+        }
+
+        List<ProductTag> replacement = new ArrayList<>(values.size());
+        for (int index = 0; index < values.size(); index++) {
+            String value = values.get(index);
+            ProductTag tag = existingTagsByValue.remove(value.toLowerCase(Locale.ROOT));
+            if (tag == null) {
+                tag = new ProductTag();
+            }
+            tag.setProduct(this);
+            tag.setValue(value);
+            tag.setDisplayOrder(index);
+            replacement.add(tag);
+        }
+
+        tags.clear();
+        tags.addAll(replacement);
+    }
 }

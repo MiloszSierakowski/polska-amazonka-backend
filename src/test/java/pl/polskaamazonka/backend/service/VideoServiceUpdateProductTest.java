@@ -430,7 +430,40 @@ class VideoServiceUpdateProductTest {
         verify(linkRepository).updateReviewFlags(eq(LINK_ID), eq(false), eq(true), any(Instant.class));
     }
 
-    private ProductDTO productDto(String url) {
+    @Test
+    void updateProduct_replacesGlobalTagsAndRemovesMissingTag() {
+        product.replaceTags(java.util.List.of("stary", "do usunięcia"));
+        doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
+        ProductDTO dto = productDto(OLD_URL);
+        dto.setTags(java.util.List.of(" nowy  tag ", "NOWY TAG", "gabka"));
+
+        videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
+
+        assertEquals(
+                java.util.List.of("nowy tag", "gabka"),
+                product.getTags().stream().map(tag -> tag.getValue()).toList()
+        );
+        verify(productRepository).save(product);
+    }
+
+    @Test
+    void updateProduct_invalidTagsDoNotChangeProductOrPersistUpdate() {
+        product.replaceTags(java.util.List.of("istniejący"));
+        ProductDTO dto = productDto(OLD_URL);
+        dto.setTags(java.util.List.of("x".repeat(51)));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals(java.util.List.of("istniejący"), product.getTags().stream().map(tag -> tag.getValue()).toList());
+        verify(productRepository, never()).save(any());
+        verify(videoProductRepository, never()).save(any());
+    }
+
+    private ProductDTO productDto(String url) {
         ProductDTO dto = new ProductDTO();
         LinkDTO productLink = new LinkDTO();
         productLink.setUrl(url);
@@ -438,5 +471,4 @@ class VideoServiceUpdateProductTest {
         dto.setProductLink(productLink);
         return dto;
     }
-}
-
+}

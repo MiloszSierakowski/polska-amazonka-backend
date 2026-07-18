@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
@@ -123,7 +124,7 @@ class VideoServicePublicCodeLookupTest {
 
     @Test
     void getByPublicCodePublicReturnsVideoForExistingCode() {
-        VideoDTO result = videoService.getByPublicCodePublic("A110");
+        PublicVideoDTO result = videoService.getByPublicCodePublic("A110");
 
         assertNotNull(result);
         assertEquals(VIDEO_ID, result.getId());
@@ -133,7 +134,7 @@ class VideoServicePublicCodeLookupTest {
 
     @Test
     void getByPublicCodePublicNormalizesLowercaseCode() {
-        VideoDTO result = videoService.getByPublicCodePublic("a110");
+        PublicVideoDTO result = videoService.getByPublicCodePublic("a110");
 
         assertEquals("A110", result.getPublicCode());
         verify(videoRepository).findWithProductsByPublicCode("A110");
@@ -221,7 +222,7 @@ class VideoServicePublicCodeLookupTest {
         video.setPromotionEndAt(java.time.Instant.now().plusSeconds(3600));
         when(videoRepository.findAllActivePromoted(any(java.time.Instant.class))).thenReturn(List.of(video));
 
-        List<VideoDTO> result = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> result = videoService.getAllPromotedPublic();
 
         assertEquals(1, result.size());
         assertEquals("A110", result.get(0).getPublicCode());

@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.service.VideoService;
 
 import java.util.List;
@@ -19,22 +19,22 @@ public class PublicVideoController {
     private final VideoService videoService;
 
     @GetMapping("/promoted")
-    public List<VideoDTO> getPromoted() {
+    public List<PublicVideoDTO> getPromoted() {
         return videoService.getAllPromotedPublic();
     }
 
     @GetMapping
-    public List<VideoDTO> getAll(@RequestParam(required = false) Long categoryId) {
+    public List<PublicVideoDTO> getAll(@RequestParam(required = false) Long categoryId) {
         return videoService.getAllPublic(categoryId);
     }
 
     @GetMapping("/by-code/{publicCode}")
-    public VideoDTO getByPublicCode(@PathVariable String publicCode) {
+    public PublicVideoDTO getByPublicCode(@PathVariable String publicCode) {
         return videoService.getByPublicCodePublic(publicCode);
     }
 
     @GetMapping("/{id}")
-    public VideoDTO getById(@PathVariable Long id) {
+    public PublicVideoDTO getById(@PathVariable Long id) {
         return videoService.getByIdPublic(id);
     }
 }

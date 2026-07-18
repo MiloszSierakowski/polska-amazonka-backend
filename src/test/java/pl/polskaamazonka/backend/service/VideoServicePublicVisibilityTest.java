@@ -15,6 +15,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
@@ -124,7 +125,7 @@ class VideoServicePublicVisibilityTest {
     void activeVideoWithoutPublicCodeIsExcludedFromRegularPublicList() {
         when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
 
-        List<VideoDTO> result = videoService.getAllPublic(null);
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
         assertTrue(result.isEmpty());
     }
@@ -137,7 +138,7 @@ class VideoServicePublicVisibilityTest {
         when(videoRepository.findAllActivePromoted(any(Instant.class))).thenReturn(List.of(promoted));
         when(videoProductRepository.findByVideo_Id(2L)).thenReturn(List.of(workingProductRelation(promoted, 20L)));
 
-        List<VideoDTO> result = videoService.getAllPromotedPublic();
+        List<PublicVideoDTO> result = videoService.getAllPromotedPublic();
 
         assertTrue(result.isEmpty());
     }
@@ -146,14 +147,14 @@ class VideoServicePublicVisibilityTest {
     void videoWithoutPublicCodeIsExcludedFromCategoryFilteredPublicList() {
         when(videoRepository.findAllByCategoryId(7L)).thenReturn(List.of(video));
 
-        List<VideoDTO> result = videoService.getAllPublic(7L);
+        List<PublicVideoDTO> result = videoService.getAllPublic(7L);
 
         assertTrue(result.isEmpty());
     }
 
     @Test
     void getByIdPublicDoesNotReturnVideoWithoutPublicCode() {
-        VideoDTO result = videoService.getByIdPublic(VIDEO_ID);
+        PublicVideoDTO result = videoService.getByIdPublic(VIDEO_ID);
 
         assertNull(result);
     }
@@ -162,7 +163,7 @@ class VideoServicePublicVisibilityTest {
     void videoWithValidPublicCodeIsReturnedPublicly() {
         video.setPublicCode("A110");
 
-        VideoDTO result = videoService.getByIdPublic(VIDEO_ID);
+        PublicVideoDTO result = videoService.getByIdPublic(VIDEO_ID);
 
         assertNotNull(result);
         assertEquals(VIDEO_ID, result.getId());
@@ -191,7 +192,7 @@ class VideoServicePublicVisibilityTest {
         video.setIsActive(false);
         when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
 
-        List<VideoDTO> result = videoService.getAllPublic(null);
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
         assertTrue(result.isEmpty());
     }
@@ -204,7 +205,7 @@ class VideoServicePublicVisibilityTest {
         relation.setProduct(brokenProduct);
         when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
 
-        List<VideoDTO> result = videoService.getAllPublic(null);
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
         assertTrue(result.isEmpty());
     }
@@ -214,9 +215,9 @@ class VideoServicePublicVisibilityTest {
         video.setPublicCode("A110");
         when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
 
-        List<VideoDTO> result = videoService.getAllPublic(null);
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
-        assertEquals(List.of(VIDEO_ID), result.stream().map(VideoDTO::getId).toList());
+        assertEquals(List.of(VIDEO_ID), result.stream().map(PublicVideoDTO::getId).toList());
         assertEquals("A110", result.get(0).getPublicCode());
         assertFalse(result.get(0).getProducts().isEmpty());
     }
