@@ -119,6 +119,44 @@ class ProductRedirectServiceTest {
     }
 
     @Test
+    void resolveRedirectUrlForNullUrlThrowsNotFound() {
+        setProductUrl(null);
+        assertNotFound();
+    }
+
+    @Test
+    void resolveRedirectUrlForBrokenLinkThrowsNotFound() {
+        setProductUrl(ALIEXPRESS_URL);
+        product.getProductLink().setIsBroken(true);
+        assertNotFound();
+    }
+
+    @Test
+    void resolveRedirectUrlForLinkNeedingReviewThrowsNotFound() {
+        setProductUrl(ALIEXPRESS_URL);
+        product.getProductLink().setNeedsReview(true);
+        assertNotFound();
+    }
+
+    @Test
+    void resolveRedirectUrlForInactiveLinkThrowsNotFound() {
+        setProductUrl(ALIEXPRESS_URL);
+        product.getProductLink().setIsActive(false);
+        assertNotFound();
+    }
+
+    @Test
+    void resolveRedirectUrlAllowsHistoricalNullFlags() {
+        setProductUrl(ALIEXPRESS_URL);
+        product.getProductLink().setIsBroken(null);
+        product.getProductLink().setNeedsReview(null);
+        product.getProductLink().setIsActive(null);
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
+
+        assertEquals(ALIEXPRESS_URL, productRedirectService.resolveRedirectUrl(10L));
+    }
+
+    @Test
     void resolveRedirectUrlTrimsStoredUrl() {
         setProductUrl("  " + ALIEXPRESS_URL + "  ");
         when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
@@ -132,5 +170,16 @@ class ProductRedirectServiceTest {
         Link link = new Link();
         link.setUrl(url);
         product.setProductLink(link);
+    }
+
+    private void assertNotFound() {
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> productRedirectService.resolveRedirectUrl(10L)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
     }
 }

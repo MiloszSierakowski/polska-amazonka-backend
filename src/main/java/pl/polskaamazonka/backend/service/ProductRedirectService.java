@@ -21,7 +21,7 @@ public class ProductRedirectService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         Link productLink = product.getProductLink();
-        if (productLink == null || productLink.getUrl() == null || productLink.getUrl().isBlank()) {
+        if (!ProductLinkPublicVisibility.isPubliclyAvailable(productLink)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 

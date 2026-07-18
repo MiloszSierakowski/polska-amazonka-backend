@@ -194,6 +194,21 @@ class VideoServicePublicCodeLookupTest {
     }
 
     @Test
+    void getByPublicCodePublicReturnsNotFoundForProductNeedingReview() {
+        assertBlockedProductReturnsNotFound(link -> link.setNeedsReview(true));
+    }
+
+    @Test
+    void getByPublicCodePublicReturnsNotFoundForInactiveProductLink() {
+        assertBlockedProductReturnsNotFound(link -> link.setIsActive(false));
+    }
+
+    @Test
+    void getByPublicCodePublicReturnsNotFoundForBrokenProductLink() {
+        assertBlockedProductReturnsNotFound(link -> link.setIsBroken(true));
+    }
+
+    @Test
     void changedPublicCodeDoesNotResolveOldCode() {
         video.setPublicCode("B220");
         when(videoRepository.findWithProductsByPublicCode("A110")).thenReturn(Optional.empty());
@@ -238,6 +253,18 @@ class VideoServicePublicCodeLookupTest {
 
         assertNotNull(result);
         assertEquals(VIDEO_ID, result.getId());
+    }
+
+    private void assertBlockedProductReturnsNotFound(java.util.function.Consumer<Link> blocker) {
+        blocker.accept(relation.getProduct().getProductLink());
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> videoService.getByPublicCodePublic("A110")
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals(NOT_FOUND_MESSAGE, exception.getReason());
     }
 
     private Video activeVideo(Long id, String publicCode) {

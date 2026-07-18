@@ -58,6 +58,10 @@ class ProductServicePublicSearchTest {
         assertTrue(jpql.contains("WHERE t.product = p"));
         assertTrue(jpql.contains("LOWER(t.value) LIKE LOWER(CONCAT('%', :search, '%'))"));
         assertTrue(jpql.contains(")\n              AND (l.isBroken IS NULL OR l.isBroken = FALSE)"));
+        assertTrue(jpql.contains("(l.needsReview IS NULL OR l.needsReview = FALSE)"));
+        assertTrue(jpql.contains("(l.isActive IS NULL OR l.isActive = TRUE)"));
+        assertTrue(jpql.contains("l.url IS NOT NULL"));
+        assertTrue(jpql.contains("TRIM(l.url) <> ''"));
         assertFalse(jpql.contains("JOIN FETCH p.tags"));
         assertTrue(jpql.contains("v.isActive = TRUE"));
         assertTrue(jpql.contains("v.publicCode IS NOT NULL"));

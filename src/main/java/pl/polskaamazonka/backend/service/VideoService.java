@@ -643,7 +643,7 @@ public class VideoService {
         dto.setPreviewImageUrl(resolveAndPersistPreview(video));
         var products = videoProductRepository.findByVideo_Id(video.getId()).stream()
                 .filter(videoProduct -> videoProduct.getProduct() != null)
-                .filter(videoProduct -> hasWorkingLink(videoProduct.getProduct()))
+                .filter(videoProduct -> hasPubliclyAvailableLink(videoProduct.getProduct()))
                 .map(videoProduct -> ProductMapper.toPublicVideoDTO(videoProduct, includePromoCodes))
                 .toList();
         if (products.isEmpty()) {
@@ -653,12 +653,8 @@ public class VideoService {
         return dto;
     }
 
-    private boolean hasWorkingLink(Product product) {
-        Link link = product.getProductLink();
-        if (link == null) {
-            return false;
-        }
-        return !Boolean.TRUE.equals(link.getIsBroken());
+    private boolean hasPubliclyAvailableLink(Product product) {
+        return ProductLinkPublicVisibility.isPubliclyAvailable(product.getProductLink());
     }
 
     private boolean hasPublicCodeForPublicApi(Video video) {
@@ -711,7 +707,7 @@ public class VideoService {
         boolean hasWorkingProduct = relations.stream()
                 .map(VideoProduct::getProduct)
                 .filter(Objects::nonNull)
-                .anyMatch(this::hasWorkingLink);
+                .anyMatch(this::hasPubliclyAvailableLink);
         if (!hasWorkingProduct) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -790,7 +786,7 @@ public class VideoService {
                 .filter(Objects::nonNull)
                 .toList();
         long workingProductCount = products.stream()
-                .filter(this::hasWorkingLink)
+                .filter(this::hasPubliclyAvailableLink)
                 .count();
         if (products.isEmpty() || workingProductCount == 0L) {
             reasons.add("Brak przypisanych i działających produktów");

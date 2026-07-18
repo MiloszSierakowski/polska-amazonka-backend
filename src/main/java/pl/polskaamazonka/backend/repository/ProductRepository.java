@@ -29,6 +29,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                 )
             )
               AND (l.isBroken IS NULL OR l.isBroken = FALSE)
+              AND (l.needsReview IS NULL OR l.needsReview = FALSE)
+              AND (l.isActive IS NULL OR l.isActive = TRUE)
+              AND l.url IS NOT NULL
+              AND TRIM(l.url) <> ''
               AND v.isActive = TRUE
               AND v.publicCode IS NOT NULL
               AND TRIM(v.publicCode) <> ''

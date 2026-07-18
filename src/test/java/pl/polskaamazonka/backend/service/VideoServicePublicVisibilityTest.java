@@ -222,6 +222,51 @@ class VideoServicePublicVisibilityTest {
         assertFalse(result.get(0).getProducts().isEmpty());
     }
 
+    @Test
+    void publicListReturnsOnlyPubliclyAvailableProductsFromMixedVideo() {
+        video.setPublicCode("A110");
+        VideoProduct blockedRelation = workingProductRelation(video, 11L);
+        blockedRelation.getProduct().getProductLink().setNeedsReview(true);
+        when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
+        when(videoProductRepository.findByVideo_Id(VIDEO_ID)).thenReturn(List.of(relation, blockedRelation));
+
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
+
+        assertEquals(List.of(PRODUCT_ID), result.get(0).getProducts().stream().map(product -> product.getId()).toList());
+    }
+
+    @Test
+    void publicListHidesProductNeedingReview() {
+        assertBlockedProductRemovesVideo(link -> link.setNeedsReview(true));
+    }
+
+    @Test
+    void publicListHidesInactiveProductLink() {
+        assertBlockedProductRemovesVideo(link -> link.setIsActive(false));
+    }
+
+    @Test
+    void publicListHidesProductWithBlankUrl() {
+        assertBlockedProductRemovesVideo(link -> link.setUrl("   "));
+    }
+
+    @Test
+    void adminGetByIdStillReturnsProductWithBlockedLink() {
+        relation.getProduct().getProductLink().setNeedsReview(true);
+
+        VideoDTO result = videoService.getById(VIDEO_ID);
+
+        assertEquals(List.of(PRODUCT_ID), result.getProducts().stream().map(product -> product.getId()).toList());
+    }
+
+    private void assertBlockedProductRemovesVideo(java.util.function.Consumer<Link> blocker) {
+        video.setPublicCode("A110");
+        blocker.accept(relation.getProduct().getProductLink());
+        when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
+
+        assertTrue(videoService.getAllPublic(null).isEmpty());
+    }
+
     private Video activeVideo(Long id, String publicCode) {
         Video result = new Video();
         result.setId(id);
