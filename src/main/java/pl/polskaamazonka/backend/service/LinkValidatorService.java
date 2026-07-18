@@ -7,10 +7,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import pl.polskaamazonka.backend.config.LinkValidationProperties;
 import pl.polskaamazonka.backend.model.Link;
+import pl.polskaamazonka.backend.model.LinkValidationRunStatus;
+import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.repository.LinkRepository;
-import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerCheckResponse;
-import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerCheckStatus;
-import pl.polskaamazonka.backend.service.linkchecker.LinkCheckerWorkerClient;
+import pl.polskaamazonka.backend.repository.ProductRepository;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -81,8 +81,9 @@ public class LinkValidatorService {
     );
 
     private final LinkRepository linkRepository;
-    private final LinkCheckerWorkerClient linkCheckerWorkerClient;
-    private final ProductLinkUrlSupport productLinkUrlSupport;
+    private final ProductLinkVerificationService productLinkVerificationService;
+    private final ProductRepository productRepository;
+    private final LinkValidationHistoryService linkValidationHistoryService;
     private final LinkValidationProperties linkValidationProperties;
     private final TransactionTemplate transactionTemplate;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -92,14 +93,16 @@ public class LinkValidatorService {
 
     LinkValidatorService(
             LinkRepository linkRepository,
-            LinkCheckerWorkerClient linkCheckerWorkerClient,
-            ProductLinkUrlSupport productLinkUrlSupport,
+            ProductLinkVerificationService productLinkVerificationService,
+            ProductRepository productRepository,
+            LinkValidationHistoryService linkValidationHistoryService,
             LinkValidationProperties linkValidationProperties,
             PlatformTransactionManager transactionManager
     ) {
         this.linkRepository = linkRepository;
-        this.linkCheckerWorkerClient = linkCheckerWorkerClient;
-        this.productLinkUrlSupport = productLinkUrlSupport;
+        this.productLinkVerificationService = productLinkVerificationService;
+        this.productRepository = productRepository;
+        this.linkValidationHistoryService = linkValidationHistoryService;
         this.linkValidationProperties = linkValidationProperties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -111,6 +114,7 @@ public class LinkValidatorService {
     }
 
     ScheduledLinkValidationStats executeScheduledLinkValidation() {
+        Long runId = linkValidationHistoryService.startRun(ProductLinkVerificationSource.SCHEDULED);
         Instant startedAt = Instant.now();
         ScheduledLinkValidationStats stats = new ScheduledLinkValidationStats(
                 startedAt,
@@ -119,34 +123,47 @@ public class LinkValidatorService {
                 linkValidationProperties.getMinHoursBetweenChecks()
         );
 
-        List<Link> links = selectLinksForScheduledValidation();
-        stats.setSelected(links.size());
+        try {
+            List<Link> links = selectLinksForScheduledValidation();
+            stats.setSelected(links.size());
 
-        for (int index = 0; index < links.size(); index++) {
-            if (index > 0) {
-                pauseBetweenChecks();
+            for (int index = 0; index < links.size(); index++) {
+                if (index > 0) {
+                    pauseBetweenChecks();
+                }
+                Link link = links.get(index);
+                try {
+                    ScheduledLinkValidationOutcome outcome = transactionTemplate.execute(
+                            status -> validateSingleLinkForSchedule(link, runId)
+                    );
+                    stats.recordOutcome(outcome);
+                } catch (Exception exception) {
+                    log.warn(
+                            "Scheduled validation failed for link id={}: {}",
+                            link.getId(),
+                            exception.getMessage()
+                    );
+                    recordUnexpectedScheduledFailure(runId, link);
+                    stats.recordTechnicalError();
+                }
             }
-            Link link = links.get(index);
-            try {
-                ScheduledLinkValidationOutcome outcome = transactionTemplate.execute(
-                        status -> validateSingleLinkForSchedule(link)
-                );
-                stats.recordOutcome(outcome);
-            } catch (Exception exception) {
-                log.warn(
-                        "Scheduled validation failed for link id={}: {}",
-                        link.getId(),
-                        exception.getMessage()
-                );
-                transactionTemplate.executeWithoutResult(
-                        status -> markLinkValidationUncertain(link, Instant.now())
-                );
-                stats.recordTechnicalError();
-            }
+
+            stats.finish();
+            LinkValidationRunStatus runStatus = stats.getTechnicalErrors() > 0
+                    ? LinkValidationRunStatus.COMPLETED_WITH_ERRORS
+                    : LinkValidationRunStatus.COMPLETED;
+            finishScheduledRunSafely(runId, runStatus, stats, stats.getLastError());
+            return stats;
+        } catch (RuntimeException exception) {
+            stats.finish();
+            finishScheduledRunSafely(
+                    runId,
+                    LinkValidationRunStatus.FAILED,
+                    stats,
+                    "Nie udało się wykonać zaplanowanej partii weryfikacji."
+            );
+            throw exception;
         }
-
-        stats.finish();
-        return stats;
     }
 
     private void logScheduledValidationStart() {
@@ -160,12 +177,13 @@ public class LinkValidatorService {
 
     private void logScheduledValidationFinish(ScheduledLinkValidationStats stats) {
         log.info(
-                "Scheduled link validation finished: selected={}, checked={}, working={}, broken={}, uncertain={}, technicalErrors={}, durationMs={}",
+                "Scheduled link validation finished: selected={}, checked={}, working={}, broken={}, uncertain={}, blocked={}, technicalErrors={}, durationMs={}",
                 stats.getSelected(),
                 stats.getChecked(),
                 stats.getWorking(),
                 stats.getBroken(),
                 stats.getUncertain(),
+                stats.getBlocked(),
                 stats.getTechnicalErrors(),
                 stats.getDurationMs()
         );
@@ -186,18 +204,32 @@ public class LinkValidatorService {
         );
     }
 
-    ScheduledLinkValidationOutcome validateSingleLinkForSchedule(Link link) {
-        Instant checkedAt = Instant.now();
+    ScheduledLinkValidationOutcome validateSingleLinkForSchedule(Link link, Long runId) {
         String url = link.getUrl();
+        if ("product".equals(link.getType())) {
+            ProductLinkVerificationResult result = productLinkVerificationService.verify(
+                    link,
+                    ProductLinkVerificationSource.SCHEDULED
+            );
+            Product product = productRepository.findFirstByProductLink_Id(link.getId()).orElse(null);
+            try {
+                linkValidationHistoryService.recordItem(runId, link, product, result);
+            } catch (RuntimeException exception) {
+                log.warn("Could not save validation history item for link id={}", link.getId());
+                return ScheduledLinkValidationOutcome.TECHNICAL_ERROR;
+            }
+            return switch (result.status()) {
+                case WORKING -> ScheduledLinkValidationOutcome.WORKING;
+                case BROKEN -> ScheduledLinkValidationOutcome.BROKEN;
+                case UNCERTAIN -> ScheduledLinkValidationOutcome.UNCERTAIN;
+                case BLOCKED -> ScheduledLinkValidationOutcome.BLOCKED;
+                case TECHNICAL_ERROR -> ScheduledLinkValidationOutcome.TECHNICAL_ERROR;
+            };
+        }
+        Instant checkedAt = Instant.now();
         if (url == null || url.isBlank()) {
             linkRepository.updateReviewFlags(link.getId(), true, false, checkedAt);
             return ScheduledLinkValidationOutcome.BROKEN;
-        }
-        if ("product".equals(link.getType())) {
-            String verificationUrl = productLinkUrlSupport.verificationUrlForStored(url.trim());
-            LinkCheckerWorkerCheckResponse workerResponse = linkCheckerWorkerClient.check(verificationUrl);
-            applyWorkerCheckResult(link, workerResponse, checkedAt);
-            return toWorkerOutcome(workerResponse.status());
         }
         boolean broken = isBroken(url.trim());
         link.setIsBroken(broken);
@@ -208,12 +240,43 @@ public class LinkValidatorService {
                 : ScheduledLinkValidationOutcome.WORKING;
     }
 
-    private ScheduledLinkValidationOutcome toWorkerOutcome(LinkCheckerWorkerCheckStatus status) {
-        return switch (status) {
-            case WORKING -> ScheduledLinkValidationOutcome.WORKING;
-            case BROKEN -> ScheduledLinkValidationOutcome.BROKEN;
-            case UNCERTAIN, BLOCKED -> ScheduledLinkValidationOutcome.UNCERTAIN;
-        };
+    private void recordUnexpectedScheduledFailure(Long runId, Link link) {
+        try {
+            Product product = productRepository.findFirstByProductLink_Id(link.getId()).orElse(null);
+            ProductLinkVerificationResult result = new ProductLinkVerificationResult(
+                    ProductLinkVerificationStatus.TECHNICAL_ERROR,
+                    ProductLinkVerificationSource.SCHEDULED,
+                    Boolean.TRUE.equals(link.getIsBroken()),
+                    true,
+                    Instant.now(),
+                    0L,
+                    link.getUrl(),
+                    null,
+                    "Nie udało się wykonać kontroli linku.",
+                    null,
+                    null,
+                    true,
+                    link.getIsBroken(),
+                    link.getNeedsReview(),
+                    ProductLinkVerificationService.TECHNICAL_ERROR_MESSAGE
+            );
+            linkValidationHistoryService.recordItem(runId, link, product, result);
+        } catch (RuntimeException historyException) {
+            log.warn("Could not save failed validation history item for link id={}", link.getId());
+        }
+    }
+
+    private void finishScheduledRunSafely(
+            Long runId,
+            LinkValidationRunStatus status,
+            ScheduledLinkValidationStats stats,
+            String lastError
+    ) {
+        try {
+            linkValidationHistoryService.finishRun(runId, status, stats.toRunSummary(), lastError);
+        } catch (RuntimeException exception) {
+            log.error("Could not finish link validation history run id={}", runId);
+        }
     }
 
     public boolean isBroken(String url) {
@@ -242,29 +305,6 @@ public class LinkValidatorService {
             }
             return true;
         }
-    }
-
-    private void applyWorkerCheckResult(Link link, LinkCheckerWorkerCheckResponse response, Instant checkedAt) {
-        LinkCheckerWorkerCheckStatus status = response.status();
-        if (status == LinkCheckerWorkerCheckStatus.UNCERTAIN || status == LinkCheckerWorkerCheckStatus.BLOCKED) {
-            markLinkValidationUncertain(link, checkedAt);
-            return;
-        }
-        linkRepository.updateReviewFlags(
-                link.getId(),
-                status == LinkCheckerWorkerCheckStatus.BROKEN,
-                false,
-                checkedAt
-        );
-    }
-
-    private void markLinkValidationUncertain(Link link, Instant checkedAt) {
-        linkRepository.updateReviewFlags(
-                link.getId(),
-                Boolean.TRUE.equals(link.getIsBroken()),
-                true,
-                checkedAt
-        );
     }
 
     private void pauseBetweenChecks() {

@@ -11,6 +11,7 @@ import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
     long countByProductLink_Id(Long productLinkId);
+    Optional<Product> findFirstByProductLink_Id(Long productLinkId);
 
     @Query("SELECT p FROM Product p JOIN FETCH p.productLink WHERE p.id = :id")
     Optional<Product> findByIdWithProductLink(@Param("id") Long id);

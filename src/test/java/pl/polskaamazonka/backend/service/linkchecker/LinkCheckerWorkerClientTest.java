@@ -12,6 +12,8 @@ import org.springframework.web.client.RestClient;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -74,5 +76,23 @@ class LinkCheckerWorkerClientTest {
         );
 
         assertEquals("Link checker worker returned HTTP 503", exception.getMessage());
+    }
+
+    @Test
+    void isReachable_returnsTrueForSuccessfulHealthResponse() {
+        server.expect(requestTo(BASE_URL + "/health"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess());
+
+        assertTrue(client.isReachable());
+    }
+
+    @Test
+    void isReachable_returnsFalseWithoutExposingWorkerError() {
+        server.expect(requestTo(BASE_URL + "/health"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        assertFalse(client.isReachable());
     }
 }

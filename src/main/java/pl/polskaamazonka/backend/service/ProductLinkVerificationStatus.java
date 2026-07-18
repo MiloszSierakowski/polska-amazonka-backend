@@ -1,6 +1,6 @@
 package pl.polskaamazonka.backend.service;
 
-enum ScheduledLinkValidationOutcome {
+public enum ProductLinkVerificationStatus {
     WORKING,
     BROKEN,
     UNCERTAIN,

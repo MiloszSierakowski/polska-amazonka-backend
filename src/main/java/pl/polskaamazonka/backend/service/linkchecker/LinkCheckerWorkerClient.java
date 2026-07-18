@@ -13,6 +13,19 @@ public class LinkCheckerWorkerClient {
 
     private final RestClient linkCheckerWorkerRestClient;
 
+    public boolean isReachable() {
+        try {
+            return linkCheckerWorkerRestClient.get()
+                    .uri("/health")
+                    .retrieve()
+                    .toBodilessEntity()
+                    .getStatusCode()
+                    .is2xxSuccessful();
+        } catch (RestClientException exception) {
+            return false;
+        }
+    }
+
     public LinkCheckerWorkerCheckResponse check(String url) {
         try {
             LinkCheckerWorkerCheckResponse response = linkCheckerWorkerRestClient.post()

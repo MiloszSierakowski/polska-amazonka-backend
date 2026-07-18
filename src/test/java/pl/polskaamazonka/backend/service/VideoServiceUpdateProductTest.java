@@ -297,7 +297,6 @@ class VideoServiceUpdateProductTest {
         assertEquals(NEW_ALLEGRO_URL, link.getUrl());
         assertTrue(link.getNeedsReview());
         verify(productPageScraperService).scrape("https://allegro.pl/oferta/new-product-987654321");
-        verify(productPageScraperService, never()).evaluateProductLinkAvailability(anyString());
     }
 
     @Test

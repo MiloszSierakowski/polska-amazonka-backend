@@ -3,6 +3,7 @@ package pl.polskaamazonka.backend.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -22,9 +23,9 @@ import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.mapper.VideoMapper;
 import pl.polskaamazonka.backend.service.scraper.ProductNameCleaner;
-import pl.polskaamazonka.backend.service.scraper.ProductLinkAvailability;
 import pl.polskaamazonka.backend.service.scraper.ProductPageData;
 import pl.polskaamazonka.backend.model.Link;
+import pl.polskaamazonka.backend.model.LinkValidationRunStatus;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
 import pl.polskaamazonka.backend.model.VideoProduct;
@@ -46,6 +47,7 @@ import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class VideoService {
 
     private static final Pattern TIKTOK_VIDEO_ID_PATTERN = Pattern.compile("/video/(\\d+)");
@@ -63,6 +65,8 @@ public class VideoService {
     private final ProductNameCleaner productNameCleaner;
     private final ActivityLogService activityLogService;
     private final ProductLinkUrlSupport productLinkUrlSupport;
+    private final ProductLinkVerificationService productLinkVerificationService;
+    private final LinkValidationHistoryService linkValidationHistoryService;
     private final VideoPublicCodeSupport videoPublicCodeSupport;
 
     private static final String PUBLIC_CODE_REQUIRED_MESSAGE = "Kod filmu jest wymagany.";
@@ -349,37 +353,93 @@ public class VideoService {
 
     @Transactional
     public ProductLinkVerifyResultDTO verifyProductLink(Long videoId, Long productId) {
-        Product product = loadProductForVideo(videoId, productId);
-        Link link = requireProductLink(product);
-        String storedUrl = link.getUrl().trim();
-        String verificationUrl = productLinkUrlSupport.verificationUrlForStored(storedUrl);
-        ProductLinkAvailability availability = productPageScraperService.evaluateProductLinkAvailability(verificationUrl);
-        persistLinkAvailability(link, availability);
+        Long runId = linkValidationHistoryService.startRun(ProductLinkVerificationSource.MANUAL);
+        try {
+            Product product = loadProductForVideo(videoId, productId);
+            Link link = requireProductLink(product);
+            ProductLinkVerificationResult verification = productLinkVerificationService.verify(
+                    link,
+                    ProductLinkVerificationSource.MANUAL
+            );
+            boolean historyItemSaved = recordValidationItemSafely(runId, link, product, verification);
 
-        ProductPageData scraped = scrapeSafely(verificationUrl);
-        Link refreshedLink = linkRepository.findById(link.getId()).orElse(link);
-        ProductLinkVerifyResultDTO result = new ProductLinkVerifyResultDTO();
-        result.setVideoId(videoId);
-        result.setProductId(productId);
-        result.setVerificationUncertain(availability == ProductLinkAvailability.UNCERTAIN);
-        result.setNeedsReview(refreshedLink.getNeedsReview());
-        result.setIsBroken(refreshedLink.getIsBroken());
-        result.setLinkWorking(availability == ProductLinkAvailability.WORKING);
-        result.setCurrentTitle(product.getName());
-        result.setCurrentImageUrl(product.getImageUrl());
-        result.setStoreTitle(resolveScrapedProductName(scraped, verificationUrl));
-        result.setStoreImageUrl(scraped != null ? scraped.getImageUrl() : null);
-        String availabilityLabel = switch (availability) {
-            case WORKING -> "sprawny";
-            case BROKEN -> "niesprawny";
-            case UNCERTAIN -> "niepewny";
-        };
-        activityLogService.logAction(
-                "WERYFIKACJA_LINKU",
-                "Zweryfikowano link produktu o ID: " + productId + " w filmie o ID: " + videoId
-                        + " (Wynik: " + availabilityLabel + ")"
-        );
-        return result;
+            ProductPageData scraped = verification.checkedUrl() == null
+                    ? null
+                    : scrapeSafely(verification.checkedUrl());
+            ProductLinkVerifyResultDTO result = new ProductLinkVerifyResultDTO();
+            result.setVideoId(videoId);
+            result.setProductId(productId);
+            result.setVerificationUncertain(verification.isUncertain());
+            result.setNeedsReview(verification.needsReview());
+            result.setIsBroken(verification.isBroken());
+            result.setLinkWorking(verification.isWorking());
+            result.setVerificationStatus(verification.status().name());
+            result.setVerificationMessage(verification.message());
+            result.setCurrentTitle(product.getName());
+            result.setCurrentImageUrl(product.getImageUrl());
+            result.setStoreTitle(scraped == null
+                    ? null
+                    : resolveScrapedProductName(scraped, verification.checkedUrl()));
+            result.setStoreImageUrl(scraped != null ? scraped.getImageUrl() : null);
+            String availabilityLabel = switch (verification.status()) {
+                case WORKING -> "sprawny";
+                case BROKEN -> "niesprawny";
+                case UNCERTAIN -> "niepewny";
+                case BLOCKED -> "zablokowany";
+                case TECHNICAL_ERROR -> "błąd techniczny";
+            };
+            activityLogService.logAction(
+                    "WERYFIKACJA_LINKU",
+                    "Zweryfikowano link produktu o ID: " + productId + " w filmie o ID: " + videoId
+                            + " (Wynik: " + availabilityLabel + ")"
+            );
+            LinkValidationRunStatus runStatus = verification.technicalError() || !historyItemSaved
+                    ? LinkValidationRunStatus.COMPLETED_WITH_ERRORS
+                    : LinkValidationRunStatus.COMPLETED;
+            finishValidationRunSafely(
+                    runId,
+                    runStatus,
+                    LinkValidationRunSummary.forSingle(verification),
+                    historyItemSaved ? verification.message() : "Nie udało się zapisać wyniku weryfikacji."
+            );
+            return result;
+        } catch (RuntimeException exception) {
+            finishValidationRunSafely(
+                    runId,
+                    LinkValidationRunStatus.FAILED,
+                    new LinkValidationRunSummary(1, 0, 0, 0, 0, 0, 1),
+                    "Nie udało się wykonać ręcznej weryfikacji."
+            );
+            throw exception;
+        }
+    }
+
+    private boolean recordValidationItemSafely(
+            Long runId,
+            Link link,
+            Product product,
+            ProductLinkVerificationResult verification
+    ) {
+        try {
+            linkValidationHistoryService.recordItem(runId, link, product, verification);
+            return true;
+        } catch (RuntimeException exception) {
+            log.warn("Could not save manual validation history item for link id={}", link.getId());
+            return false;
+        }
+    }
+
+    private void finishValidationRunSafely(
+            Long runId,
+            LinkValidationRunStatus status,
+            LinkValidationRunSummary summary,
+            String lastError
+    ) {
+        try {
+            linkValidationHistoryService.finishRun(runId, status, summary, lastError);
+        } catch (RuntimeException exception) {
+            log.error("Could not finish manual link validation history run id={}", runId);
+        }
     }
 
     @Transactional
@@ -400,31 +460,6 @@ public class VideoService {
                 "Ręcznie ustawiono flagę linku produktu o ID: " + productId + " w filmie o ID: " + videoId
                         + " (Wynik: " + statusLabel + ")"
         );
-    }
-
-    private void persistLinkAvailability(Link link, ProductLinkAvailability availability) {
-        Instant checkedAt = Instant.now();
-        boolean isBroken;
-        boolean needsReview;
-        switch (availability) {
-            case WORKING -> {
-                isBroken = false;
-                needsReview = false;
-            }
-            case BROKEN -> {
-                isBroken = true;
-                needsReview = false;
-            }
-            case UNCERTAIN -> {
-                isBroken = Boolean.TRUE.equals(link.getIsBroken());
-                needsReview = true;
-            }
-            default -> throw new IllegalStateException("Unexpected availability: " + availability);
-        }
-        linkRepository.updateReviewFlags(link.getId(), isBroken, needsReview, checkedAt);
-        link.setIsBroken(isBroken);
-        link.setNeedsReview(needsReview);
-        link.setLastCheckedAt(checkedAt);
     }
 
     @Transactional

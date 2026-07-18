@@ -165,7 +165,6 @@ class VideoServiceAttachProductTest {
         assertFalse(savedLink.getIsBroken());
         assertTrue(savedLink.getNeedsReview());
         verify(productPageScraperService).scrape("https://allegro.pl/oferta/nazwa-produktu-123456789");
-        verify(productPageScraperService, never()).evaluateProductLinkAvailability(anyString());
     }
 
     @Test

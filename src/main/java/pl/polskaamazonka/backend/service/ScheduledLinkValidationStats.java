@@ -18,7 +18,9 @@ public class ScheduledLinkValidationStats {
     private int working;
     private int broken;
     private int uncertain;
+    private int blocked;
     private int technicalErrors;
+    private String lastError;
     private Instant finishedAt;
 
     public ScheduledLinkValidationStats(
@@ -43,12 +45,30 @@ public class ScheduledLinkValidationStats {
             case WORKING -> working++;
             case BROKEN -> broken++;
             case UNCERTAIN -> uncertain++;
+            case BLOCKED -> blocked++;
+            case TECHNICAL_ERROR -> {
+                technicalErrors++;
+                lastError = ProductLinkVerificationService.TECHNICAL_ERROR_MESSAGE;
+            }
         }
+    }
+
+    public LinkValidationRunSummary toRunSummary() {
+        return new LinkValidationRunSummary(
+                selected,
+                checked,
+                working,
+                broken,
+                uncertain,
+                blocked,
+                technicalErrors
+        );
     }
 
     public void recordTechnicalError() {
         checked++;
         technicalErrors++;
+        lastError = "Nie udało się wykonać kontroli jednego z linków.";
     }
 
     public void finish() {

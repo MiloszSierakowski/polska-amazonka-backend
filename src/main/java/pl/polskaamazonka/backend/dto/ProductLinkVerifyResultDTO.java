@@ -19,6 +19,8 @@ public class ProductLinkVerifyResultDTO {
 
     @JsonProperty("needsReview")
     private Boolean needsReview;
+    private String verificationStatus;
+    private String verificationMessage;
     private String currentTitle;
     private String currentImageUrl;
     private String storeTitle;
