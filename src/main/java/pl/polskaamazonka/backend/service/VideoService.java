@@ -444,7 +444,7 @@ public class VideoService {
 
     @Transactional
     public void setProductLinkFlag(Long videoId, Long productId, boolean isBroken, boolean needsReview) {
-        Video video = videoRepository.findById(videoId)
+        videoRepository.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         Product product = loadProductForVideo(videoId, productId);
         Link link = requireProductLink(product);
@@ -453,7 +453,6 @@ public class VideoService {
         link.setIsBroken(isBroken);
         link.setNeedsReview(needsReview);
         link.setLastCheckedAt(checkedAt);
-        validatePromotionProductPresence(video);
         String statusLabel = needsReview ? "wymaga sprawdzenia" : (isBroken ? "niesprawny" : "sprawny");
         activityLogService.logAction(
                 "RECZNA_FLAGA_LINKU",

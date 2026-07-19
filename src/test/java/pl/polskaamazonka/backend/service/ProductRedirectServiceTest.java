@@ -132,10 +132,12 @@ class ProductRedirectServiceTest {
     }
 
     @Test
-    void resolveRedirectUrlForLinkNeedingReviewThrowsNotFound() {
+    void resolveRedirectUrlForLinkNeedingReviewReturnsStoredUrl() {
         setProductUrl(ALIEXPRESS_URL);
         product.getProductLink().setNeedsReview(true);
-        assertNotFound();
+        when(productRepository.findByIdWithProductLink(10L)).thenReturn(Optional.of(product));
+
+        assertEquals(ALIEXPRESS_URL, productRedirectService.resolveRedirectUrl(10L));
     }
 
     @Test

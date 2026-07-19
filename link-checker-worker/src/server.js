@@ -1,11 +1,12 @@
 import http from 'node:http';
 import { config } from './config.js';
-import { validateCheckUrl } from './url-validator.js';
-import { checkLink } from './check-link.js';
+import { validateCheckUrl, UrlValidationError } from './url-validator.js';
+import { checkLink, getDomainCooldownResult } from './check-link.js';
 import { closeBrowser } from './browser-manager.js';
-import { SingleFlightQueue } from './queue.js';
+import { QueueFullError, SingleFlightQueue } from './queue.js';
+import { readJsonBody, RequestBodyTooLargeError } from './request-body.js';
 
-const queue = new SingleFlightQueue();
+const queue = new SingleFlightQueue(config.maxQueueSize);
 
 function sendJson(response, statusCode, body) {
   const payload = JSON.stringify(body);
@@ -14,21 +15,6 @@ function sendJson(response, statusCode, body) {
     'Content-Length': Buffer.byteLength(payload),
   });
   response.end(payload);
-}
-
-async function readJsonBody(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(chunk);
-  }
-  if (chunks.length === 0) {
-    return {};
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw new Error('INVALID_JSON');
-  }
 }
 
 const server = http.createServer(async (request, response) => {
@@ -41,32 +27,66 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && request.url === '/check') {
       let body;
       try {
-        body = await readJsonBody(request);
+        body = await readJsonBody(request, config.maxRequestBodyBytes);
       } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          sendJson(response, 413, { error: 'Request body too large', reason: 'REQUEST_BODY_TOO_LARGE' });
+          return;
+        }
         if (error instanceof Error && error.message === 'INVALID_JSON') {
-          sendJson(response, 400, { error: 'Invalid JSON body' });
+          sendJson(response, 400, { error: 'Invalid JSON body', reason: 'INVALID_JSON' });
           return;
         }
         throw error;
       }
 
-      const validation = validateCheckUrl(body.url);
-      if (!validation.ok) {
-        sendJson(response, 400, { error: validation.reason });
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+        sendJson(response, 400, { error: 'URL rejected', reason: 'INVALID_URL' });
         return;
       }
 
-      const result = await queue.enqueue(() => checkLink(validation.url));
-      sendJson(response, 200, result);
+      let validatedUrl;
+      try {
+        validatedUrl = await validateCheckUrl(body.url);
+      } catch (error) {
+        if (error instanceof UrlValidationError) {
+          sendJson(response, error.statusCode, { error: 'URL rejected', reason: error.reason });
+          return;
+        }
+        throw error;
+      }
+
+      const cooldownResult = getDomainCooldownResult(validatedUrl);
+      if (cooldownResult) {
+        sendJson(response, 200, cooldownResult);
+        return;
+      }
+
+      try {
+        if (queue.isFull()) {
+          throw new QueueFullError();
+        }
+        const result = await queue.enqueue(() => checkLink(validatedUrl));
+        sendJson(response, 200, result);
+      } catch (error) {
+        if (error instanceof QueueFullError) {
+          sendJson(response, 503, { error: 'Worker queue unavailable', reason: 'QUEUE_FULL' });
+          return;
+        }
+        if (error instanceof UrlValidationError) {
+          sendJson(response, error.statusCode, { error: 'Navigation rejected', reason: error.reason });
+          return;
+        }
+        throw error;
+      }
       return;
     }
 
     sendJson(response, 404, { error: 'Not found' });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch {
     sendJson(response, 503, {
       error: 'Worker technical error',
-      reason: message,
+      reason: 'INFRASTRUCTURE_ERROR',
     });
   }
 });

@@ -223,7 +223,7 @@ class VideoServicePublicVisibilityTest {
     }
 
     @Test
-    void publicListReturnsOnlyPubliclyAvailableProductsFromMixedVideo() {
+    void publicListKeepsProductNeedingReviewInMixedVideo() {
         video.setPublicCode("A110");
         VideoProduct blockedRelation = workingProductRelation(video, 11L);
         blockedRelation.getProduct().getProductLink().setNeedsReview(true);
@@ -232,12 +232,22 @@ class VideoServicePublicVisibilityTest {
 
         List<PublicVideoDTO> result = videoService.getAllPublic(null);
 
-        assertEquals(List.of(PRODUCT_ID), result.get(0).getProducts().stream().map(product -> product.getId()).toList());
+        assertEquals(
+                List.of(PRODUCT_ID, 11L),
+                result.get(0).getProducts().stream().map(product -> product.getId()).toList()
+        );
     }
 
     @Test
-    void publicListHidesProductNeedingReview() {
-        assertBlockedProductRemovesVideo(link -> link.setNeedsReview(true));
+    void publicListKeepsVideoContainingOnlyProductNeedingReview() {
+        video.setPublicCode("A110");
+        relation.getProduct().getProductLink().setNeedsReview(true);
+        when(videoRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(video));
+
+        List<PublicVideoDTO> result = videoService.getAllPublic(null);
+
+        assertEquals(1, result.size());
+        assertEquals(List.of(PRODUCT_ID), result.get(0).getProducts().stream().map(product -> product.getId()).toList());
     }
 
     @Test

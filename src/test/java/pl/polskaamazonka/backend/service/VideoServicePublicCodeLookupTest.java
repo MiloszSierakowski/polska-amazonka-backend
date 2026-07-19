@@ -194,8 +194,13 @@ class VideoServicePublicCodeLookupTest {
     }
 
     @Test
-    void getByPublicCodePublicReturnsNotFoundForProductNeedingReview() {
-        assertBlockedProductReturnsNotFound(link -> link.setNeedsReview(true));
+    void getByPublicCodePublicReturnsVideoForProductNeedingReview() {
+        relation.getProduct().getProductLink().setNeedsReview(true);
+
+        PublicVideoDTO result = videoService.getByPublicCodePublic("A110");
+
+        assertEquals(VIDEO_ID, result.getId());
+        assertEquals(List.of(PRODUCT_ID), result.getProducts().stream().map(product -> product.getId()).toList());
     }
 
     @Test

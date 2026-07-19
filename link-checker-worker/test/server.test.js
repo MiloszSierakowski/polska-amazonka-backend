@@ -10,14 +10,14 @@ const workerRoot = path.resolve(__dirname, '..');
 
 function request(port, method, urlPath, body) {
   return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : undefined;
+    const payload = body !== undefined ? JSON.stringify(body) : undefined;
     const req = http.request(
       {
         hostname: '127.0.0.1',
         port,
         path: urlPath,
         method,
-        headers: payload
+        headers: payload !== undefined
           ? {
               'Content-Type': 'application/json',
               'Content-Length': Buffer.byteLength(payload),
@@ -37,7 +37,7 @@ function request(port, method, urlPath, body) {
       },
     );
     req.on('error', reject);
-    if (payload) {
+    if (payload !== undefined) {
       req.write(payload);
     }
     req.end();
@@ -93,4 +93,11 @@ test('server exposes health and validates check payload', async (t) => {
 
   const invalidUrl = await request(port, 'POST', '/check', { url: 'ftp://bad.example' });
   assert.equal(invalidUrl.statusCode, 400);
+
+  const nullBody = await request(port, 'POST', '/check', null);
+  assert.equal(nullBody.statusCode, 400);
+  assert.equal(nullBody.body.reason, 'INVALID_URL');
+
+  const oversized = await request(port, 'POST', '/check', { url: 'x'.repeat(20000) });
+  assert.equal(oversized.statusCode, 413);
 });

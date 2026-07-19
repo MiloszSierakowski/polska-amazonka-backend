@@ -12,7 +12,6 @@ public final class ProductLinkPublicVisibility {
                 && link.getUrl() != null
                 && !link.getUrl().isBlank()
                 && !Boolean.TRUE.equals(link.getIsBroken())
-                && !Boolean.TRUE.equals(link.getNeedsReview())
                 && !Boolean.FALSE.equals(link.getIsActive());
     }
 }

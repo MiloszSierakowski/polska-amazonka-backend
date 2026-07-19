@@ -13,4 +13,6 @@ public class ProductDTO {
     private LinkDTO productLink;
     private String promoCode;
     private List<String> tags;
+    private Boolean isBroken;
+    private Boolean needsReview;
 }

@@ -300,6 +300,32 @@ class VideoServicePromotionTest {
     }
 
     @Test
+    void markingOnlyProductOfPromotedVideoAsBrokenIsAllowed() {
+        video.setPromotionStartAt(PROMOTION_START);
+        video.setPromotionEndAt(PROMOTION_END);
+
+        videoService.setProductLinkFlag(VIDEO_ID, PRODUCT_ID, true, false);
+
+        assertTrue(link.getIsBroken());
+        assertFalse(link.getNeedsReview());
+        assertEquals(product, relation.getProduct());
+        verify(linkRepository).updateReviewFlags(eq(LINK_ID), eq(true), eq(false), any(Instant.class));
+    }
+
+    @Test
+    void markingOnlyProductOfPromotedVideoAsNeedingReviewIsAllowed() {
+        video.setPromotionStartAt(PROMOTION_START);
+        video.setPromotionEndAt(PROMOTION_END);
+
+        videoService.setProductLinkFlag(VIDEO_ID, PRODUCT_ID, false, true);
+
+        assertFalse(link.getIsBroken());
+        assertTrue(link.getNeedsReview());
+        assertEquals(product, relation.getProduct());
+        verify(linkRepository).updateReviewFlags(eq(LINK_ID), eq(false), eq(true), any(Instant.class));
+    }
+
+    @Test
     void updateProductSavesPromoCodeOnVideoProductRelation() {
         doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
         ProductDTO dto = productDto(PRODUCT_URL, "  SAVE10  ");

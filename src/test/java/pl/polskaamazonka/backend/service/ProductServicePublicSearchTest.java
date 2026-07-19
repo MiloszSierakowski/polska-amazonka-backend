@@ -58,7 +58,7 @@ class ProductServicePublicSearchTest {
         assertTrue(jpql.contains("WHERE t.product = p"));
         assertTrue(jpql.contains("LOWER(t.value) LIKE LOWER(CONCAT('%', :search, '%'))"));
         assertTrue(jpql.contains(")\n              AND (l.isBroken IS NULL OR l.isBroken = FALSE)"));
-        assertTrue(jpql.contains("(l.needsReview IS NULL OR l.needsReview = FALSE)"));
+        assertFalse(jpql.contains("needsReview"));
         assertTrue(jpql.contains("(l.isActive IS NULL OR l.isActive = TRUE)"));
         assertTrue(jpql.contains("l.url IS NOT NULL"));
         assertTrue(jpql.contains("TRIM(l.url) <> ''"));
@@ -90,6 +90,17 @@ class ProductServicePublicSearchTest {
         ArgumentCaptor<String> searchCaptor = ArgumentCaptor.forClass(String.class);
         verify(productRepository).searchPublicByNameOrTag(searchCaptor.capture(), any(Pageable.class));
         assertEquals("szuk", searchCaptor.getValue());
+    }
+
+    @Test
+    void searchPublicKeepsProductNeedingReview() {
+        publicProduct.getProductLink().setNeedsReview(true);
+        when(productRepository.searchPublicByNameOrTag(eq("produkt"), any(Pageable.class)))
+                .thenReturn(List.of(publicProduct));
+
+        List<PublicProductDto> result = productService.searchPublic("produkt");
+
+        assertEquals(List.of(1L), result.stream().map(PublicProductDto::getId).toList());
     }
 
     @Test

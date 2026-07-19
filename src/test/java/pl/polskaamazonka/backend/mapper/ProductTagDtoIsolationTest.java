@@ -6,6 +6,7 @@ import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.PublicProductDto;
 import pl.polskaamazonka.backend.dto.PublicVideoDTO;
 import pl.polskaamazonka.backend.dto.PublicVideoProductDTO;
+import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.VideoProduct;
 import pl.polskaamazonka.backend.service.ProductTagNormalizer;
@@ -23,11 +24,17 @@ class ProductTagDtoIsolationTest {
     @Test
     void administrativeProductDtoContainsTagsInDisplayOrder() {
         Product product = new Product();
+        Link link = new Link();
+        link.setIsBroken(true);
+        link.setNeedsReview(true);
+        product.setProductLink(link);
         ProductTagNormalizer.replaceTags(product, List.of("Pierwszy", "drugi"));
 
         ProductDTO dto = ProductMapper.toDTO(product);
 
         assertEquals(List.of("Pierwszy", "drugi"), dto.getTags());
+        assertTrue(dto.getIsBroken());
+        assertTrue(dto.getNeedsReview());
         assertTrue(objectMapper.valueToTree(dto).has("tags"));
     }
 
@@ -43,6 +50,8 @@ class ProductTagDtoIsolationTest {
         video.setProducts(List.of(videoProduct));
 
         assertFalse(objectMapper.valueToTree(videoProduct).has("tags"));
+        assertFalse(objectMapper.valueToTree(videoProduct).has("isBroken"));
+        assertFalse(objectMapper.valueToTree(videoProduct).has("needsReview"));
         assertFalse(objectMapper.valueToTree(video).toString().contains("tags"));
         assertFalse(objectMapper.valueToTree(new PublicProductDto()).has("tags"));
     }

@@ -13,13 +13,13 @@ class ProductLinkPublicVisibilityTest {
         assertTrue(ProductLinkPublicVisibility.isPubliclyAvailable(link(false, false, true, "https://example.com")));
         assertTrue(ProductLinkPublicVisibility.isPubliclyAvailable(link(null, false, true, "https://example.com")));
         assertTrue(ProductLinkPublicVisibility.isPubliclyAvailable(link(false, null, true, "https://example.com")));
+        assertTrue(ProductLinkPublicVisibility.isPubliclyAvailable(link(false, true, true, "https://example.com")));
         assertTrue(ProductLinkPublicVisibility.isPubliclyAvailable(link(false, false, null, "https://example.com")));
     }
 
     @Test
-    void rejectsEveryBlockingFlag() {
+    void rejectsBrokenOrInactiveLink() {
         assertFalse(ProductLinkPublicVisibility.isPubliclyAvailable(link(true, false, true, "https://example.com")));
-        assertFalse(ProductLinkPublicVisibility.isPubliclyAvailable(link(false, true, true, "https://example.com")));
         assertFalse(ProductLinkPublicVisibility.isPubliclyAvailable(link(false, false, false, "https://example.com")));
         assertFalse(ProductLinkPublicVisibility.isPubliclyAvailable(link(true, true, false, "https://example.com")));
     }
