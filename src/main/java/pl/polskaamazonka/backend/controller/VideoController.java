@@ -42,6 +42,14 @@ public class VideoController {
         return videoService.addProduct(videoId, dto);
     }
 
+    @PostMapping("/{videoId}/products/{productId}/attach")
+    public VideoDTO attachExistingProduct(
+            @PathVariable Long videoId,
+            @PathVariable Long productId
+    ) {
+        return videoService.attachExistingProduct(videoId, productId);
+    }
+
     @PutMapping("/{videoId}/products/{productId}")
     public VideoDTO updateProduct(
             @PathVariable Long videoId,

@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -222,6 +223,42 @@ public class VideoService {
     }
 
     @Transactional
+    public VideoDTO attachExistingProduct(
+            Long videoId,
+            Long productId
+    ) {
+        Video video = videoRepository.findById(videoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Film nie istnieje."));
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Produkt nie istnieje."));
+        if (videoProductRepository.existsByVideo_IdAndProduct_Id(videoId, productId)) {
+            throw productAlreadyAssigned();
+        }
+
+        VideoProduct relation = new VideoProduct();
+        relation.setVideo(video);
+        relation.setProduct(product);
+        relation.setPromoCode(resolveSharedPromoCode(productId));
+        try {
+            videoProductRepository.saveAndFlush(relation);
+        } catch (DataIntegrityViolationException exception) {
+            throw productAlreadyAssigned();
+        }
+        activityLogService.logAction(
+                "PRZYPISANIE_PRODUKTU",
+                "Przypisano istniejący produkt o ID: " + productId + " do filmu o ID: " + videoId
+        );
+        return getById(videoId);
+    }
+
+    private ResponseStatusException productAlreadyAssigned() {
+        return new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Produkt jest już przypisany do tego filmu."
+        );
+    }
+
+    @Transactional
     public VideoDTO updateProduct(Long videoId, Long productId, ProductDTO dto) {
         videoRepository.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -260,7 +297,7 @@ public class VideoService {
                 product.setImageUrl(dto.getImageUrl().trim());
             }
         }
-        relation.setPromoCode(normalizePromoCode(dto.getPromoCode()));
+        updateSharedPromoCode(productId, dto.getPromoCode());
         product.replaceTags(normalizedTags);
         linkRepository.save(link);
         productRepository.save(product);
@@ -760,6 +797,31 @@ public class VideoService {
         }
         String trimmed = promoCode.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String resolveSharedPromoCode(Long productId) {
+        Set<String> existingCodes = videoProductRepository.findAllByProduct_Id(productId).stream()
+                .map(VideoProduct::getPromoCode)
+                .map(this::normalizePromoCode)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (existingCodes.size() > 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Produkt ma niespójne kody promocyjne. Ujednolić kody przed kolejnym przypisaniem."
+            );
+        }
+        return existingCodes.stream().findFirst().orElse(null);
+    }
+
+    private void updateSharedPromoCode(Long productId, String rawPromoCode) {
+        String promoCode = normalizePromoCode(rawPromoCode);
+        if (promoCode != null && promoCode.length() > 255) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kod promocyjny może mieć maksymalnie 255 znaków.");
+        }
+        List<VideoProduct> relations = videoProductRepository.findAllByProduct_Id(productId);
+        relations.forEach(relation -> relation.setPromoCode(promoCode));
+        videoProductRepository.saveAll(relations);
     }
 
     private String resolvePublicCodeForCreate(String raw) {

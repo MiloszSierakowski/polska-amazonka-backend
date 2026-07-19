@@ -1,6 +1,7 @@
 package pl.polskaamazonka.backend.repository;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +16,22 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     @Query("SELECT p FROM Product p JOIN FETCH p.productLink WHERE p.id = :id")
     Optional<Product> findByIdWithProductLink(@Param("id") Long id);
+
+    @Query("""
+            SELECT p.id FROM Product p
+            WHERE :query = ''
+               OR LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%'))
+               OR EXISTS (
+                    SELECT t.id FROM ProductTag t
+                    WHERE t.product = p
+                      AND LOWER(t.value) LIKE LOWER(CONCAT('%', :query, '%'))
+               )
+            ORDER BY LOWER(p.name) ASC, p.id ASC
+            """)
+    List<Long> searchAdminProductIds(@Param("query") String query, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"productLink", "tags"})
+    List<Product> findByIdIn(List<Long> ids);
 
     @Query("""
             SELECT DISTINCT p FROM VideoProduct vp

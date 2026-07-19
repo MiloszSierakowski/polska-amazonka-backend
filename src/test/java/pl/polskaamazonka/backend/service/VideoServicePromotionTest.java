@@ -162,6 +162,7 @@ class VideoServicePromotionTest {
         });
         when(videoProductRepository.findByVideo_Id(VIDEO_ID)).thenReturn(List.of(relation));
         when(videoProductRepository.findByVideo_IdAndProduct_Id(VIDEO_ID, PRODUCT_ID)).thenReturn(Optional.of(relation));
+        when(videoProductRepository.findAllByProduct_Id(PRODUCT_ID)).thenReturn(List.of(relation));
         when(linkRepository.save(any(Link.class))).thenAnswer(invocation -> {
             Link saved = invocation.getArgument(0);
             saved.setId(LINK_ID);

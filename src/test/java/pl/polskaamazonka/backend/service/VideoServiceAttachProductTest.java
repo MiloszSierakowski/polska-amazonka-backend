@@ -14,7 +14,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import pl.polskaamazonka.backend.dto.LinkDTO;
+import pl.polskaamazonka.backend.dto.LinkDTO;
 import pl.polskaamazonka.backend.dto.ProductDTO;
 import pl.polskaamazonka.backend.dto.VideoDTO;
 import pl.polskaamazonka.backend.model.Link;
@@ -35,7 +35,8 @@ import pl.polskaamazonka.backend.service.scraper.TemuUrlNormalizer;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Optional;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -268,7 +269,7 @@ class VideoServiceAttachProductTest {
     }
 
     @Test
-    void addProduct_unparseableUrlIsRejected() {
+    void addProduct_unparseableUrlIsRejected() {
         ProductDTO dto = productDto("not-a-url");
 
         ResponseStatusException exception = assertThrows(
@@ -293,6 +294,106 @@ class VideoServiceAttachProductTest {
                 java.util.List.of("Gąbka do naczyń", "kuchnia"),
                 productCaptor.getValue().getTags().stream().map(tag -> tag.getValue()).toList()
         );
+    }
+
+    @Test
+    void attachExistingProductCreatesOnlyRelationAndPreservesGlobalProductState() {
+        Video secondVideo = new Video();
+        secondVideo.setId(2L);
+        Link existingLink = new Link();
+        existingLink.setId(44L);
+        existingLink.setUrl(ALIEXPRESS_PRODUCT_URL);
+        existingLink.setIsBroken(true);
+        existingLink.setNeedsReview(true);
+        existingLink.setLastCheckedAt(Instant.parse("2026-07-19T09:00:00Z"));
+        Product existingProduct = new Product();
+        existingProduct.setId(55L);
+        existingProduct.setName("Globalny produkt");
+        existingProduct.setProductLink(existingLink);
+        existingProduct.replaceTags(java.util.List.of("tag jeden", "tag dwa"));
+        when(videoRepository.findById(2L)).thenReturn(Optional.of(secondVideo));
+        when(productRepository.findById(55L)).thenReturn(Optional.of(existingProduct));
+        when(videoProductRepository.existsByVideo_IdAndProduct_Id(2L, 55L)).thenReturn(false);
+        when(videoProductRepository.saveAndFlush(any(VideoProduct.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doReturn(new VideoDTO()).when(videoService).getById(2L);
+        VideoProduct previousRelation = new VideoProduct();
+        previousRelation.setProduct(existingProduct);
+        previousRelation.setPromoCode("  WSPOLNY-KOD  ");
+        when(videoProductRepository.findAllByProduct_Id(55L)).thenReturn(java.util.List.of(previousRelation));
+
+        videoService.attachExistingProduct(2L, 55L);
+
+        ArgumentCaptor<VideoProduct> captor = ArgumentCaptor.forClass(VideoProduct.class);
+        verify(videoProductRepository).saveAndFlush(captor.capture());
+        assertEquals(secondVideo, captor.getValue().getVideo());
+        assertEquals(existingProduct, captor.getValue().getProduct());
+        assertEquals("WSPOLNY-KOD", captor.getValue().getPromoCode());
+        assertEquals(55L, captor.getValue().getProduct().getId());
+        assertEquals(44L, captor.getValue().getProduct().getProductLink().getId());
+        assertTrue(existingLink.getIsBroken());
+        assertTrue(existingLink.getNeedsReview());
+        assertEquals(java.util.List.of("tag jeden", "tag dwa"), existingProduct.getTags().stream().map(tag -> tag.getValue()).toList());
+        verify(productRepository, never()).save(existingProduct);
+        verify(linkRepository, never()).save(existingLink);
+    }
+
+    @Test
+    void attachExistingProductRejectsDuplicateWithConflict() {
+        Product existingProduct = new Product();
+        existingProduct.setId(55L);
+        when(productRepository.findById(55L)).thenReturn(Optional.of(existingProduct));
+        when(videoProductRepository.existsByVideo_IdAndProduct_Id(VIDEO_ID, 55L)).thenReturn(true);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> videoService.attachExistingProduct(VIDEO_ID, 55L)
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("Produkt jest już przypisany do tego filmu.", exception.getReason());
+        verify(videoProductRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void attachExistingProductUsesNullWhenProductHasNoPromoCode() {
+        Product existingProduct = new Product();
+        existingProduct.setId(55L);
+        when(productRepository.findById(55L)).thenReturn(Optional.of(existingProduct));
+        when(videoProductRepository.existsByVideo_IdAndProduct_Id(VIDEO_ID, 55L)).thenReturn(false);
+        when(videoProductRepository.findAllByProduct_Id(55L)).thenReturn(java.util.List.of());
+        when(videoProductRepository.saveAndFlush(any(VideoProduct.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
+
+        videoService.attachExistingProduct(VIDEO_ID, 55L);
+
+        ArgumentCaptor<VideoProduct> captor = ArgumentCaptor.forClass(VideoProduct.class);
+        verify(videoProductRepository).saveAndFlush(captor.capture());
+        org.junit.jupiter.api.Assertions.assertNull(captor.getValue().getPromoCode());
+    }
+
+    @Test
+    void attachExistingProductRejectsConflictingSharedPromoCodes() {
+        Product existingProduct = new Product();
+        existingProduct.setId(55L);
+        VideoProduct first = new VideoProduct();
+        first.setPromoCode("FIRST");
+        VideoProduct second = new VideoProduct();
+        second.setPromoCode("SECOND");
+        when(productRepository.findById(55L)).thenReturn(Optional.of(existingProduct));
+        when(videoProductRepository.existsByVideo_IdAndProduct_Id(VIDEO_ID, 55L)).thenReturn(false);
+        when(videoProductRepository.findAllByProduct_Id(55L)).thenReturn(java.util.List.of(first, second));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> videoService.attachExistingProduct(VIDEO_ID, 55L)
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals(
+                "Produkt ma niespójne kody promocyjne. Ujednolić kody przed kolejnym przypisaniem.",
+                exception.getReason()
+        );
+        verify(videoProductRepository, never()).saveAndFlush(any());
     }
 
     private ProductDTO productDto(String url) {

@@ -16,6 +16,18 @@ public interface VideoProductRepository extends JpaRepository<VideoProduct, Long
 
     Optional<VideoProduct> findByVideo_IdAndProduct_Id(Long videoId, Long productId);
 
+    boolean existsByVideo_IdAndProduct_Id(Long videoId, Long productId);
+
+    @Query("""
+            SELECT vp.product.id FROM VideoProduct vp
+            WHERE vp.video.id = :videoId
+              AND vp.product.id IN :productIds
+            """)
+    List<Long> findProductIdsAssignedToVideo(
+            @Param("videoId") Long videoId,
+            @Param("productIds") Collection<Long> productIds
+    );
+
     @Query("""
             SELECT vp FROM VideoProduct vp
             JOIN FETCH vp.product p
@@ -28,6 +40,8 @@ public interface VideoProductRepository extends JpaRepository<VideoProduct, Long
     );
 
     long countByProduct_Id(Long productId);
+
+    List<VideoProduct> findAllByProduct_Id(Long productId);
 
     @Query("""
             SELECT vp FROM VideoProduct vp

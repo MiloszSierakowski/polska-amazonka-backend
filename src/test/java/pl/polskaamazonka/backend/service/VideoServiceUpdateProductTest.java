@@ -141,8 +141,10 @@ class VideoServiceUpdateProductTest {
         relation.setProduct(product);
 
         when(videoRepository.findById(VIDEO_ID)).thenReturn(Optional.of(video));
-        when(videoProductRepository.findByVideo_IdAndProduct_Id(VIDEO_ID, PRODUCT_ID))
-                .thenReturn(Optional.of(relation));
+        when(videoProductRepository.findByVideo_IdAndProduct_Id(VIDEO_ID, PRODUCT_ID))
+                .thenReturn(Optional.of(relation));
+        when(videoProductRepository.findAllByProduct_Id(PRODUCT_ID))
+                .thenReturn(java.util.List.of(relation));
     }
 
     @Test
@@ -168,8 +170,9 @@ class VideoServiceUpdateProductTest {
         verify(productPageScraperService, never()).scrape(anyString());
     }
 
-    @Test
+    @Test
     void updateProduct_whenUrlDiffersOnlyByOuterSpaces_preservesReviewFlags() {
+        Instant previousCheckedAt = link.getLastCheckedAt();
         link.setIsBroken(true);
         link.setNeedsReview(true);
         doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
@@ -203,8 +206,13 @@ class VideoServiceUpdateProductTest {
     }
 
     @Test
-    void updateProduct_whenPromoCodeChanges_urlRemainsUnchanged() {
-        doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
+    void updateProduct_whenPromoCodeChanges_urlRemainsUnchanged() {
+        doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
+        VideoProduct secondRelation = new VideoProduct();
+        secondRelation.setProduct(product);
+        secondRelation.setPromoCode("OLD");
+        when(videoProductRepository.findAllByProduct_Id(PRODUCT_ID))
+                .thenReturn(java.util.List.of(relation, secondRelation));
 
         ProductDTO dto = productDto(OLD_URL);
         dto.setName("Old name");
@@ -213,8 +221,10 @@ class VideoServiceUpdateProductTest {
 
         videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
 
-        assertEquals(OLD_URL, link.getUrl());
-        assertEquals("PROMO2025", relation.getPromoCode());
+        assertEquals(OLD_URL, link.getUrl());
+        assertEquals("PROMO2025", relation.getPromoCode());
+        assertEquals("PROMO2025", secondRelation.getPromoCode());
+        verify(videoProductRepository).saveAll(java.util.List.of(relation, secondRelation));
         verify(productLinkUrlSupport, never()).validateProductUrl(anyString());
         verify(productPageScraperService, never()).scrape(anyString());
     }
