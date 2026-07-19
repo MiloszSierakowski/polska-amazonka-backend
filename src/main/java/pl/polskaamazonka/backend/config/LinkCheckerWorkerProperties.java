@@ -12,6 +12,7 @@ import java.time.Duration;
 public class LinkCheckerWorkerProperties {
 
     private String baseUrl = "http://localhost:3001";
+    private String token;
     private Duration connectTimeout = Duration.ofSeconds(5);
     private Duration readTimeout = Duration.ofSeconds(45);
 }

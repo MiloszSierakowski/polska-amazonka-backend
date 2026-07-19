@@ -204,6 +204,11 @@ class VideoServicePromotionTest {
         Video saved = lastSavedVideo();
         assertEquals(PROMOTION_START, saved.getPromotionStartAt());
         assertEquals(PROMOTION_END, saved.getPromotionEndAt());
+        ArgumentCaptor<Link> linkCaptor = ArgumentCaptor.forClass(Link.class);
+        verify(linkRepository).save(linkCaptor.capture());
+        assertFalse(linkCaptor.getValue().getIsBroken());
+        assertFalse(linkCaptor.getValue().getNeedsReview());
+        assertNull(linkCaptor.getValue().getLastCheckedAt());
     }
 
     @Test

@@ -242,16 +242,14 @@ public class VideoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
         String trimmedRawUrl = rawShopUrl.trim();
-        boolean urlChanged = previousUrl == null || !previousUrl.equals(trimmedRawUrl);
+        boolean urlChanged = previousUrl == null || !previousUrl.trim().equals(trimmedRawUrl);
         if (urlChanged) {
             QuickProductLinkValidationResult validation = productLinkUrlSupport.validateProductUrl(trimmedRawUrl);
             String storedUrl = productLinkUrlSupport.storedUrl(validation);
             String verificationUrl = productLinkUrlSupport.verificationUrl(validation);
-            Instant checkedAt = Instant.now();
             link.setIsBroken(false);
-            link.setNeedsReview(true);
-            link.setLastCheckedAt(checkedAt);
-            linkRepository.updateReviewFlags(link.getId(), false, true, checkedAt);
+            link.setNeedsReview(false);
+            link.setLastCheckedAt(null);
             link.setUrl(storedUrl);
             applyProductMetadataAfterUrlChange(product, dto, verificationUrl);
         } else {
@@ -602,8 +600,8 @@ public class VideoService {
         link.setType("product");
         link.setIsActive(Boolean.TRUE);
         link.setIsBroken(false);
-        link.setNeedsReview(true);
-        link.setLastCheckedAt(Instant.now());
+        link.setNeedsReview(false);
+        link.setLastCheckedAt(null);
         link = linkRepository.save(link);
 
         ProductPageData scraped = productPageScraperService.scrape(verificationUrl);

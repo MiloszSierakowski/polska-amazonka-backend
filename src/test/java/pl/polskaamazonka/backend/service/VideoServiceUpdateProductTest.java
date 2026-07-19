@@ -14,7 +14,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import pl.polskaamazonka.backend.dto.LinkDTO;
 import pl.polskaamazonka.backend.dto.ProductDTO;
-import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.dto.VideoDTO;
+import pl.polskaamazonka.backend.mapper.ProductMapper;
 import pl.polskaamazonka.backend.model.Link;
 import pl.polskaamazonka.backend.model.Product;
 import pl.polskaamazonka.backend.model.Video;
@@ -35,7 +36,8 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,7 +45,8 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -143,7 +146,8 @@ class VideoServiceUpdateProductTest {
     }
 
     @Test
-    void updateProduct_whenUrlUnchanged_preservesMetadataAndReviewFlags() {
+    void updateProduct_whenUrlUnchanged_preservesMetadataAndReviewFlags() {
+        Instant previousCheckedAt = link.getLastCheckedAt();
         link.setIsBroken(true);
         link.setNeedsReview(false);
         doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
@@ -165,7 +169,24 @@ class VideoServiceUpdateProductTest {
     }
 
     @Test
-    void updateProduct_whenUrlUnchanged_allowsExplicitMetadataUpdate() {
+    void updateProduct_whenUrlDiffersOnlyByOuterSpaces_preservesReviewFlags() {
+        link.setIsBroken(true);
+        link.setNeedsReview(true);
+        doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
+
+        ProductDTO dto = productDto("  " + OLD_URL + "  ");
+
+        videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
+
+        assertTrue(link.getIsBroken());
+        assertTrue(link.getNeedsReview());
+        assertEquals(previousCheckedAt, link.getLastCheckedAt());
+        verify(linkRepository, never()).updateReviewFlags(anyLong(), anyBoolean(), anyBoolean(), any());
+        verify(productLinkUrlSupport, never()).validateProductUrl(anyString());
+    }
+
+    @Test
+    void updateProduct_whenUrlUnchanged_allowsExplicitMetadataUpdate() {
         doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
 
         ProductDTO dto = productDto(OLD_URL);
@@ -217,7 +238,8 @@ class VideoServiceUpdateProductTest {
 
         assertEquals(NEW_ALLEGRO_URL, link.getUrl());
         assertFalse(link.getIsBroken());
-        assertTrue(link.getNeedsReview());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
         verify(productLinkUrlSupport).validateProductUrl(NEW_ALLEGRO_URL.trim());
         verify(productPageScraperService).scrape("https://allegro.pl/oferta/new-product-987654321");
     }
@@ -241,12 +263,13 @@ class VideoServiceUpdateProductTest {
         videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
 
         assertEquals(NEW_ALIEXPRESS_URL, link.getUrl());
-        assertTrue(link.getNeedsReview());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
         verify(productRepository).save(product);
     }
 
     @Test
-    void updateProduct_whenUrlChangedWithExplicitMetadata_usesDtoValuesAndMarksForReview() {
+    void updateProduct_whenUrlChangedWithExplicitMetadata_usesDtoValuesAndResetsLinkStatus() {
         doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
         when(productPageScraperService.resolveProductName(
                 eq("https://allegro.pl/oferta/new-product-987654321"),
@@ -264,7 +287,8 @@ class VideoServiceUpdateProductTest {
         assertEquals("New explicit name", product.getName());
         assertEquals("https://example.com/new-image.jpg", product.getImageUrl());
         assertEquals(NEW_ALLEGRO_URL, link.getUrl());
-        assertTrue(link.getNeedsReview());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
         verify(productPageScraperService, never()).scrape(anyString());
         verify(productPageScraperService).resolveProductName(
                 "https://allegro.pl/oferta/new-product-987654321",
@@ -295,7 +319,8 @@ class VideoServiceUpdateProductTest {
         assertEquals("Scraped title", product.getName());
         assertEquals("/stored/scraped.jpg", product.getImageUrl());
         assertEquals(NEW_ALLEGRO_URL, link.getUrl());
-        assertTrue(link.getNeedsReview());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
         verify(productPageScraperService).scrape("https://allegro.pl/oferta/new-product-987654321");
     }
 
@@ -320,7 +345,8 @@ class VideoServiceUpdateProductTest {
         assertEquals("[Do weryfikacji] new product", product.getName());
         assertEquals("/images/default-product.png", product.getImageUrl());
         assertEquals(NEW_ALLEGRO_URL, link.getUrl());
-        assertTrue(link.getNeedsReview());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
         assertFalse(link.getIsBroken());
     }
 
@@ -346,7 +372,8 @@ class VideoServiceUpdateProductTest {
         videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
 
         assertEquals(urlWithTracking, link.getUrl());
-        assertTrue(link.getNeedsReview());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
         verify(productLinkUrlSupport).validateProductUrl(urlWithTracking.trim());
         verify(productPageScraperService).scrape(OLD_URL);
     }
@@ -405,10 +432,15 @@ class VideoServiceUpdateProductTest {
     }
 
     @Test
-    void updateProduct_whenUrlChangesFromBroken_doesNotMarkAsFullyWorking() {
-        link.setIsBroken(true);
-        link.setNeedsReview(false);
-        doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
+    void updateProduct_whenUrlChangesFromBroken_resetsStatusForNewUrl() {
+        link.setIsBroken(true);
+        link.setNeedsReview(true);
+        product.replaceTags(java.util.List.of("stary tag"));
+        doAnswer(invocation -> {
+            VideoDTO response = new VideoDTO();
+            response.setProducts(java.util.List.of(ProductMapper.toDTO(relation)));
+            return response;
+        }).when(videoService).getById(VIDEO_ID);
         when(productPageScraperService.scrape("https://allegro.pl/oferta/new-product-987654321"))
                 .thenReturn(new ProductPageData("Scraped title", "https://img.example/scraped.jpg"));
         when(productNameCleaner.isWeakScrapedName("Scraped title", "https://allegro.pl/oferta/new-product-987654321"))
@@ -418,15 +450,27 @@ class VideoServiceUpdateProductTest {
         when(productImageStorageService.tryStoreFromRemoteUrl(anyString(), eq("https://allegro.pl/oferta/new-product-987654321")))
                 .thenReturn("/stored/scraped.jpg");
 
-        ProductDTO dto = productDto(NEW_ALLEGRO_URL);
-        dto.setName("Old name");
-        dto.setImageUrl("https://example.com/old-image.jpg");
-
-        videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
-
-        assertFalse(link.getIsBroken());
-        assertTrue(link.getNeedsReview());
-        verify(linkRepository).updateReviewFlags(eq(LINK_ID), eq(false), eq(true), any(Instant.class));
+        ProductDTO dto = productDto("  " + NEW_ALLEGRO_URL + "  ");
+        dto.setName("Old name");
+        dto.setImageUrl("https://example.com/old-image.jpg");
+        dto.setTags(java.util.List.of("nowy tag"));
+
+        VideoDTO response = videoService.updateProduct(VIDEO_ID, PRODUCT_ID, dto);
+
+        assertEquals(NEW_ALLEGRO_URL, link.getUrl());
+        assertFalse(link.getIsBroken());
+        assertFalse(link.getNeedsReview());
+        assertNull(link.getLastCheckedAt());
+        assertEquals(product, relation.getProduct());
+        assertEquals(1, response.getProducts().size());
+        ProductDTO responseProduct = response.getProducts().get(0);
+        assertEquals(NEW_ALLEGRO_URL, responseProduct.getProductLink().getUrl());
+        assertFalse(responseProduct.getIsBroken());
+        assertFalse(responseProduct.getNeedsReview());
+        assertNull(responseProduct.getLastCheckedAt());
+        assertEquals(java.util.List.of("nowy tag"), responseProduct.getTags());
+        verify(linkRepository, never()).updateReviewFlags(anyLong(), anyBoolean(), anyBoolean(), any());
+        verify(linkRepository).save(link);
     }
 
     @Test

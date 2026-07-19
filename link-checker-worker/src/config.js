@@ -11,6 +11,7 @@ export const config = {
   domainBlockCooldownMs: positiveInteger(process.env.DOMAIN_BLOCK_COOLDOWN_MS, 600000),
   maxRequestBodyBytes: positiveInteger(process.env.MAX_REQUEST_BODY_BYTES, 16384),
   maxQueueSize: positiveInteger(process.env.MAX_QUEUE_SIZE, 50),
+  workerToken: (process.env.LINK_CHECKER_WORKER_TOKEN ?? '').trim(),
   allowedShopHosts: (process.env.ALLOWED_SHOP_HOSTS ??
     'allegro.pl,amazon.pl,amazon.com,amazon.de,aliexpress.com,temu.com,amzn.to,temu.to')
     .split(',')

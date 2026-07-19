@@ -1,5 +1,11 @@
 # link-checker-worker
 
+Required environment variable (use the same secret in the Spring backend):
+
+```text
+LINK_CHECKER_WORKER_TOKEN=change-me
+```
+
 Playwright HTTP worker used by the backend scheduled link validation cron.
 
 ## Endpoints

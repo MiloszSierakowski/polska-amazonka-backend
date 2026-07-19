@@ -2,6 +2,7 @@ package pl.polskaamazonka.backend.dto;
 
 import lombok.Data;
 
+import java.time.Instant;
 import java.util.List;
 
 @Data
@@ -15,4 +16,5 @@ public class ProductDTO {
     private List<String> tags;
     private Boolean isBroken;
     private Boolean needsReview;
+    private Instant lastCheckedAt;
 }

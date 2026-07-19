@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import { validateCheckUrl, UrlValidationError } from './url-validator.js';
 import { checkLink, getDomainCooldownResult } from './check-link.js';
@@ -7,6 +8,26 @@ import { QueueFullError, SingleFlightQueue } from './queue.js';
 import { readJsonBody, RequestBodyTooLargeError } from './request-body.js';
 
 const queue = new SingleFlightQueue(config.maxQueueSize);
+
+if (!config.workerToken) {
+  throw new Error('LINK_CHECKER_WORKER_TOKEN must be configured');
+}
+
+function isAuthorized(request) {
+  const authorization = request.headers.authorization;
+  const prefix = 'Bearer ';
+  if (typeof authorization !== 'string' || !authorization.startsWith(prefix)) {
+    return false;
+  }
+  const supplied = Buffer.from(authorization.slice(prefix.length), 'utf8');
+  const expected = Buffer.from(config.workerToken, 'utf8');
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+function requiresAuthorization(request) {
+  return (request.method === 'GET' && request.url === '/health')
+    || (request.method === 'POST' && request.url === '/check');
+}
 
 function sendJson(response, statusCode, body) {
   const payload = JSON.stringify(body);
@@ -19,6 +40,11 @@ function sendJson(response, statusCode, body) {
 
 const server = http.createServer(async (request, response) => {
   try {
+    if (requiresAuthorization(request) && !isAuthorized(request)) {
+      sendJson(response, 401, { error: 'Unauthorized' });
+      return;
+    }
+
     if (request.method === 'GET' && request.url === '/health') {
       sendJson(response, 200, { status: 'UP' });
       return;

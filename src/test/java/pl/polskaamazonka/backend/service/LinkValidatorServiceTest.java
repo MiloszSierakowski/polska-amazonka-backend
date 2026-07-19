@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import pl.polskaamazonka.backend.config.LinkValidationProperties;
@@ -19,10 +20,12 @@ import pl.polskaamazonka.backend.repository.ProductRepository;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -99,6 +102,22 @@ class LinkValidatorServiceTest {
         Instant cutoff = cutoffCaptor.getValue();
         assertTrue(!cutoff.isBefore(before.minus(24, ChronoUnit.HOURS))
                 && !cutoff.isAfter(after.minus(24, ChronoUnit.HOURS)));
+    }
+
+    @Test
+    void scheduledSelectionQueryIncludesOnlyNonBrokenProductLinks() throws Exception {
+        Method method = LinkRepository.class.getMethod(
+                "findLinksForScheduledValidation",
+                Instant.class,
+                Pageable.class
+        );
+        String jpql = method.getAnnotation(Query.class).value();
+
+        assertTrue(jpql.contains("l.type = 'product'"));
+        assertTrue(jpql.contains("l.isBroken IS NULL OR l.isBroken = false"));
+        assertFalse(jpql.contains("l.isBroken = true"));
+        assertTrue(jpql.contains("l.needsReview = true"));
+        assertFalse(jpql.contains("l.needsReview = false"));
     }
 
     @Test

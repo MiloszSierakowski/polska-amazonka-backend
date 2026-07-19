@@ -1,6 +1,7 @@
 package pl.polskaamazonka.backend.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -82,6 +84,12 @@ public class GlobalExceptionHandler {
             Exception exception,
             HttpServletRequest request
     ) {
+        log.error(
+                "Unhandled exception while processing {} {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                exception
+        );
         ApiErrorResponse body = buildResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 request.getRequestURI(),

@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProductTagDtoIsolationTest {
@@ -35,6 +36,7 @@ class ProductTagDtoIsolationTest {
         assertEquals(List.of("Pierwszy", "drugi"), dto.getTags());
         assertTrue(dto.getIsBroken());
         assertTrue(dto.getNeedsReview());
+        assertNull(dto.getLastCheckedAt());
         assertTrue(objectMapper.valueToTree(dto).has("tags"));
     }
 
@@ -52,6 +54,7 @@ class ProductTagDtoIsolationTest {
         assertFalse(objectMapper.valueToTree(videoProduct).has("tags"));
         assertFalse(objectMapper.valueToTree(videoProduct).has("isBroken"));
         assertFalse(objectMapper.valueToTree(videoProduct).has("needsReview"));
+        assertFalse(objectMapper.valueToTree(videoProduct).has("lastCheckedAt"));
         assertFalse(objectMapper.valueToTree(video).toString().contains("tags"));
         assertFalse(objectMapper.valueToTree(new PublicProductDto()).has("tags"));
     }

@@ -44,8 +44,9 @@ public interface LinkRepository extends JpaRepository<Link, Long> {
 
     @Query("""
             SELECT l FROM Link l
-            WHERE (l.lastCheckedAt IS NULL OR l.lastCheckedAt < :cutoff)
-              AND (l.lastCheckedAt IS NULL OR l.needsReview = true OR l.isBroken = false)
+            WHERE l.type = 'product'
+              AND (l.isBroken IS NULL OR l.isBroken = false)
+              AND (l.lastCheckedAt IS NULL OR l.lastCheckedAt < :cutoff)
             ORDER BY
               CASE WHEN l.lastCheckedAt IS NULL THEN 0 ELSE 1 END,
               CASE WHEN l.needsReview = true THEN 0 ELSE 1 END,

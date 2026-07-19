@@ -20,6 +20,7 @@ public class ProductMapper {
         dto.setProductLink(LinkMapper.toDTO(product.getProductLink()));
         dto.setIsBroken(product.getProductLink() != null ? product.getProductLink().getIsBroken() : null);
         dto.setNeedsReview(product.getProductLink() != null ? product.getProductLink().getNeedsReview() : null);
+        dto.setLastCheckedAt(product.getProductLink() != null ? product.getProductLink().getLastCheckedAt() : null);
         dto.setTags(product.getTags() == null
                 ? java.util.List.of()
                 : product.getTags().stream().map(tag -> tag.getValue()).toList());
