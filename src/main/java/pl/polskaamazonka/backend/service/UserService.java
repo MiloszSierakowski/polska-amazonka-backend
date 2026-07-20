@@ -132,7 +132,7 @@ public class UserService {
     }
 
     @Transactional
-    public UserProfileDTO updateCurrentProfile(UpdateUserProfileRequest request) {
+    public ProfileUpdateResult updateCurrentProfile(UpdateUserProfileRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         }
@@ -169,11 +169,13 @@ public class UserService {
 
         User saved = userRepository.save(user);
         UserProfileDTO dto = UserMapper.toProfileDTO(saved);
-        if (loginChanging || passwordChanging) {
-            dto.setToken(jwtService.generateToken(new UserPrincipal(saved)));
-        }
-        return dto;
+        String refreshedJwt = loginChanging || passwordChanging
+                ? jwtService.generateToken(new UserPrincipal(saved))
+                : null;
+        return new ProfileUpdateResult(dto, refreshedJwt);
     }
+
+    public record ProfileUpdateResult(UserProfileDTO profile, String refreshedJwt) {}
 
     private void ensureLoginAvailable(String login) {
         userRepository.findByLogin(login).ifPresent(this::throwLoginConflict);

@@ -143,8 +143,6 @@ class VideoServiceUpdateProductTest {
         when(videoRepository.findById(VIDEO_ID)).thenReturn(Optional.of(video));
         when(videoProductRepository.findByVideo_IdAndProduct_Id(VIDEO_ID, PRODUCT_ID))
                 .thenReturn(Optional.of(relation));
-        when(videoProductRepository.findAllByProduct_Id(PRODUCT_ID))
-                .thenReturn(java.util.List.of(relation));
     }
 
     @Test

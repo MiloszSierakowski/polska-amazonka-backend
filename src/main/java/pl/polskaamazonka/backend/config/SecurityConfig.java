@@ -16,6 +16,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
+import org.springframework.security.web.csrf.CsrfException;
 import pl.polskaamazonka.backend.dto.ApiErrorResponse;
 import pl.polskaamazonka.backend.security.CustomUserDetailsService;
 import pl.polskaamazonka.backend.security.JwtAuthenticationFilter;
@@ -47,27 +50,37 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
+    private final CsrfTokenRepository csrfTokenRepository;
+    private final CsrfTokenRequestHandler csrfTokenRequestHandler;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfTokenRepository)
+                        .csrfTokenRequestHandler(csrfTokenRequestHandler))
                 .cors(cors -> {})
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            boolean csrfFailure = accessDeniedException instanceof CsrfException;
                             response.setStatus(HttpStatus.FORBIDDEN.value());
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
                             ApiErrorResponse body = new ApiErrorResponse();
                             body.setStatus(HttpStatus.FORBIDDEN.value());
                             body.setError(HttpStatus.FORBIDDEN.getReasonPhrase());
-                            body.setMessage("Brak uprawnień do wykonania tej operacji.");
+                            body.setErrorCode(csrfFailure ? "CSRF_TOKEN_INVALID" : null);
+                            body.setMessage(csrfFailure
+                                    ? "Token CSRF jest nieprawidłowy lub wygasł."
+                                    : "Brak uprawnień do wykonania tej operacji.");
                             body.setPath(request.getRequestURI());
                             objectMapper.writeValue(response.getWriter(), body);
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/public/click-stats").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
                         .requestMatchers(ADMIN_ONLY_PATHS).hasRole("ADMIN")

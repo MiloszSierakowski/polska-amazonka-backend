@@ -50,6 +50,7 @@ class ProductServicePublicSearchTest {
 
         assertNotNull(query);
         String jpql = query.value();
+        String normalizedJpql = jpql.replaceAll("\\s+", " ").trim();
         assertTrue(jpql.contains("SELECT DISTINCT p"));
         assertTrue(jpql.contains("JOIN FETCH p.productLink l"));
         assertTrue(jpql.contains("LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))"));
@@ -57,7 +58,7 @@ class ProductServicePublicSearchTest {
         assertTrue(jpql.contains("SELECT t.id FROM ProductTag t"));
         assertTrue(jpql.contains("WHERE t.product = p"));
         assertTrue(jpql.contains("LOWER(t.value) LIKE LOWER(CONCAT('%', :search, '%'))"));
-        assertTrue(jpql.contains(")\n              AND (l.isBroken IS NULL OR l.isBroken = FALSE)"));
+        assertTrue(normalizedJpql.contains(") AND (l.isBroken IS NULL OR l.isBroken = FALSE)"));
         assertFalse(jpql.contains("needsReview"));
         assertTrue(jpql.contains("(l.isActive IS NULL OR l.isActive = TRUE)"));
         assertTrue(jpql.contains("l.url IS NOT NULL"));

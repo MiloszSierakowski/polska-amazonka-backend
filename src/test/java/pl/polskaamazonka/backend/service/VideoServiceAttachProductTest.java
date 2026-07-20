@@ -150,7 +150,7 @@ class VideoServiceAttachProductTest {
     }
 
     @Test
-    void addProduct_validAllegroUrl_marksNeedsReview() {
+    void addProduct_validAllegroUrl_startsAsWorkingWithoutReview() {
         doReturn(new VideoDTO()).when(videoService).getById(VIDEO_ID);
 
         ProductDTO dto = productDto(
@@ -164,7 +164,7 @@ class VideoServiceAttachProductTest {
         Link savedLink = linkCaptor.getValue();
         assertEquals("https://allegro.pl/oferta/nazwa-produktu-123456789?utm_source=abc", savedLink.getUrl());
         assertFalse(savedLink.getIsBroken());
-        assertTrue(savedLink.getNeedsReview());
+        assertFalse(savedLink.getNeedsReview());
         verify(productPageScraperService).scrape("https://allegro.pl/oferta/nazwa-produktu-123456789");
     }
 

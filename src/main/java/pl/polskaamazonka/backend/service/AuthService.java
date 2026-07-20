@@ -25,7 +25,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final ActivityLogService activityLogService;
 
-    public LoginResponse login(LoginRequest request) {
+    public LoginResult login(LoginRequest request) {
         if (request.getLogin() == null || request.getLogin().isBlank()
                 || request.getPassword() == null || request.getPassword().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
@@ -45,8 +45,7 @@ public class AuthService {
                 "ZALOGOWANIE",
                 "Użytkownik o loginie " + user.getLogin() + " zalogował się do systemu."
         );
-        return new LoginResponse(
-                token,
+        LoginResponse response = new LoginResponse(
                 user.getId(),
                 user.getLogin(),
                 user.getRole(),
@@ -54,6 +53,7 @@ public class AuthService {
                 user.getLastName(),
                 user.getEmail()
         );
+        return new LoginResult(response, token);
     }
 
     public void logout() {
@@ -66,4 +66,6 @@ public class AuthService {
                 "Użytkownik o loginie " + principal.getLogin() + " wylogował się z systemu."
         );
     }
+
+    public record LoginResult(LoginResponse response, String jwt) {}
 }
