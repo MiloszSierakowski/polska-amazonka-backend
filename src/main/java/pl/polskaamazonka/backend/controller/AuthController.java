@@ -1,5 +1,6 @@
 package pl.polskaamazonka.backend.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 
 import java.util.Map;
 import pl.polskaamazonka.backend.dto.LoginRequest;
@@ -22,6 +24,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtCookieService jwtCookieService;
+    private final CsrfTokenRepository csrfTokenRepository;
 
     @GetMapping("/csrf")
     public Map<String, String> csrf(CsrfToken csrfToken) {
@@ -30,18 +33,24 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest request, HttpServletResponse response) {
+    public LoginResponse login(
+            @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response
+    ) {
         AuthService.LoginResult loginResult = authService.login(request);
         jwtCookieService.setTokenCookie(response, loginResult.jwt());
+        csrfTokenRepository.saveToken(null, httpRequest, response);
         return loginResult.response();
     }
 
     @PostMapping("/logout")
-    public void logout(HttpServletResponse response) {
+    public void logout(HttpServletRequest request, HttpServletResponse response) {
         try {
             authService.logout();
         } finally {
             jwtCookieService.clearTokenCookie(response);
+            csrfTokenRepository.saveToken(null, request, response);
         }
     }
 }

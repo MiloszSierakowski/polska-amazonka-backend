@@ -34,12 +34,14 @@ import pl.polskaamazonka.backend.security.CustomUserDetailsService;
 import pl.polskaamazonka.backend.security.JwtAuthenticationFilter;
 import pl.polskaamazonka.backend.security.JwtCookieService;
 import pl.polskaamazonka.backend.security.JwtService;
+import pl.polskaamazonka.backend.security.SameSiteCookieCsrfTokenRepository;
 import pl.polskaamazonka.backend.service.AuthService;
 
 import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -57,7 +59,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CsrfConfig.class,
         JwtCookieService.class,
         JwtAuthenticationFilter.class,
-        CsrfProtectionTest.MutationController.class
+        CsrfProtectionTest.MutationController.class,
+        CsrfProtectionTest.ProfileController.class
 })
 @TestPropertySource(properties = {
         "app.auth.cookie.secure=false",
@@ -188,16 +191,56 @@ class CsrfProtectionTest {
     }
 
     @Test
-    void loginAllowsFirstMutationAndFirstLogoutWithSameCsrfToken() throws Exception {
-        CsrfRequest csrf = csrfRequest();
-        MockHttpServletRequestBuilder login = withCsrf(post("/api/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"login\":\"admin\",\"password\":\"password\"}"), csrf);
-        mockMvc.perform(login).andExpect(status().isOk());
+    void loginRefreshProfileAndFirstMutationUseFreshCsrfToken() throws Exception {
+        MvcResult initialCsrfResult = mockMvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String initialCsrfHeader = csrfSetCookie(
+                initialCsrfResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE)
+        );
+        CsrfRequest initialCsrf = csrfRequestFromSetCookie(initialCsrfHeader);
 
-        mockMvc.perform(withCsrf(withAuthentication(post("/test/mutation"), "jwt"), csrf))
-                .andExpect(status().isOk());
-        mockMvc.perform(withCsrf(withAuthentication(post("/api/auth/logout"), "jwt"), csrf))
+        MvcResult loginResult = mockMvc.perform(withCsrf(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"admin\",\"password\":\"password\"}"), initialCsrf))
+                .andExpect(status().isOk())
+                .andReturn();
+        String deletedCsrf = csrfSetCookie(loginResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE));
+        assertTrue(deletedCsrf.startsWith("XSRF-TOKEN=;"));
+        assertTrue(deletedCsrf.contains("Max-Age=0"));
+        String jwt = cookieValue(cookieNamed(
+                loginResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE),
+                JwtCookieService.COOKIE_NAME
+        ));
+
+        MvcResult refreshedCsrfResult = mockMvc.perform(get("/api/auth/csrf")
+                        .cookie(new Cookie(JwtCookieService.COOKIE_NAME, jwt)))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertEquals(1, refreshedCsrfResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .filter(header -> header.startsWith("XSRF-TOKEN="))
+                .count());
+        String refreshedCsrfHeader = csrfSetCookie(
+                refreshedCsrfResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE)
+        );
+        assertFalse(refreshedCsrfHeader.startsWith("XSRF-TOKEN=;"));
+        assertFalse(refreshedCsrfHeader.contains("Max-Age=0"));
+        assertTrue(refreshedCsrfHeader.contains("SameSite=Lax"));
+        assertTrue(refreshedCsrfHeader.contains("Path=/"));
+        assertFalse(refreshedCsrfHeader.contains("HttpOnly"));
+        CsrfRequest refreshedCsrf = csrfRequestFromSetCookie(refreshedCsrfHeader);
+
+        MvcResult profileResult = mockMvc.perform(get("/api/users/profile")
+                        .cookie(
+                                new Cookie(JwtCookieService.COOKIE_NAME, jwt),
+                                refreshedCsrf.cookie()
+                        ))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertFalse(profileResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .anyMatch(header -> header.startsWith("XSRF-TOKEN=")));
+
+        mockMvc.perform(withCsrf(withAuthentication(post("/test/mutation"), jwt), refreshedCsrf))
                 .andExpect(status().isOk());
     }
 
@@ -236,6 +279,18 @@ class CsrfProtectionTest {
         CsrfToken token = repository.generateToken(request);
         repository.saveToken(token, request, response);
         return new CsrfRequest(token.getToken(), new Cookie("XSRF-TOKEN", token.getToken()));
+    }
+
+    private CsrfRequest csrfRequestFromSetCookie(String setCookie) {
+        String token = cookieValue(setCookie);
+        assertFalse(token.isBlank());
+        return new CsrfRequest(token, new Cookie(SameSiteCookieCsrfTokenRepository.COOKIE_NAME, token));
+    }
+
+    private static String cookieValue(String setCookie) {
+        int valueStart = setCookie.indexOf('=') + 1;
+        int valueEnd = setCookie.indexOf(';', valueStart);
+        return setCookie.substring(valueStart, valueEnd < 0 ? setCookie.length() : valueEnd);
     }
 
     private MockHttpServletRequestBuilder withCsrf(
@@ -286,5 +341,11 @@ class CsrfProtectionTest {
         @PutMapping public void put() {}
         @PatchMapping public void patch() {}
         @DeleteMapping public void delete() {}
+    }
+
+    @RestController
+    public static class ProfileController {
+        @GetMapping("/api/users/profile")
+        public void profile() {}
     }
 }

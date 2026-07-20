@@ -4,6 +4,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import pl.polskaamazonka.backend.dto.LoginRequest;
 import pl.polskaamazonka.backend.dto.LoginResponse;
 import pl.polskaamazonka.backend.dto.UpdateUserProfileRequest;
@@ -33,27 +35,34 @@ class AuthCookieControllerTest {
     @Test
     void loginSetsCookieWithoutReturningTokenInResponse() {
         AuthService authService = mock(AuthService.class);
+        CsrfTokenRepository csrfTokenRepository = mock(CsrfTokenRepository.class);
         LoginRequest request = new LoginRequest();
         LoginResponse expected = new LoginResponse(
                 1L, "admin", UserRole.ADMIN, null, null, null
         );
         when(authService.login(request)).thenReturn(new AuthService.LoginResult(expected, "login-jwt"));
         MockHttpServletResponse response = new MockHttpServletResponse();
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
 
-        LoginResponse result = new AuthController(authService, cookieService).login(request, response);
+        LoginResponse result = new AuthController(authService, cookieService, csrfTokenRepository)
+                .login(request, httpRequest, response);
 
         assertEquals("admin", result.getLogin());
         assertTrue(response.getHeader(HttpHeaders.SET_COOKIE).contains("PA_ADMIN_TOKEN=login-jwt"));
+        verify(csrfTokenRepository).saveToken(null, httpRequest, response);
     }
 
     @Test
     void logoutPreservesActivityCallAndExpiresCookie() {
         AuthService authService = mock(AuthService.class);
+        CsrfTokenRepository csrfTokenRepository = mock(CsrfTokenRepository.class);
         MockHttpServletResponse response = new MockHttpServletResponse();
+        MockHttpServletRequest request = new MockHttpServletRequest();
 
-        new AuthController(authService, cookieService).logout(response);
+        new AuthController(authService, cookieService, csrfTokenRepository).logout(request, response);
 
         verify(authService).logout();
+        verify(csrfTokenRepository).saveToken(null, request, response);
         assertTrue(response.getHeader(HttpHeaders.SET_COOKIE).contains("Max-Age=0"));
     }
 
